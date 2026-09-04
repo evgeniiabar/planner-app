@@ -1,0 +1,553 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#12141a">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Планировщик</title>
+<link rel="manifest" href="data:application/manifest+json,%7B%22name%22%3A%22%D0%9F%D0%BB%D0%B0%D0%BD%D0%B8%D1%80%D0%BE%D0%B2%D1%89%D0%B8%D0%BA%22%2C%22short_name%22%3A%22%D0%9F%D0%BB%D0%B0%D0%BD%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%2312141a%22%2C%22theme_color%22%3A%22%2312141a%22%2C%22icons%22%3A%5B%7B%22src%22%3A%22data%3Aimage%2Fsvg%2Bxml%2C%253Csvg%2520xmlns%253D%2522http%253A%252F%252Fwww.w3.org%252F2000%252Fsvg%2522%2520viewBox%253D%25220%25200%2520512%2520512%2522%253E%253Crect%2520width%253D%2522512%2522%2520height%253D%2522512%2522%2520rx%253D%252296%2522%2520fill%253D%2522%252312141a%2522%252F%253E%253Cpath%2520d%253D%2522M140%2520266l70%252070%2520162-172%2522%2520fill%253D%2522none%2522%2520stroke%253D%2522%25237dd3a0%2522%2520stroke-width%253D%252246%2522%2520stroke-linecap%253D%2522round%2522%2520stroke-linejoin%253D%2522round%2522%252F%253E%253C%252Fsvg%253E%22%2C%22sizes%22%3A%22512x512%22%2C%22type%22%3A%22image%2Fsvg%2Bxml%22%7D%5D%7D">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='96' fill='%2312141a'/%3E%3Cpath d='M140 266l70 70 162-172' fill='none' stroke='%237dd3a0' stroke-width='46' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<style>
+  :root {
+    --bg: #12141a;
+    --panel: #1b1e26;
+    --panel-2: #232733;
+    --line: #2e3340;
+    --text: #e7e9ee;
+    --dim: #9aa1b1;
+    --accent: #7dd3a0;
+    --accent-ink: #10231a;
+    --warn: #e8b16a;
+    --err: #e88a8a;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 16px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    display: flex;
+    flex-direction: column;
+    overscroll-behavior-y: contain;
+  }
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: max(10px, env(safe-area-inset-top)) 16px 10px;
+    border-bottom: 1px solid var(--line);
+    background: var(--bg);
+  }
+  header h1 { font-size: 17px; font-weight: 600; margin: 0; }
+  .badge {
+    font-size: 13px;
+    color: var(--warn);
+    background: rgba(232,177,106,.12);
+    border: 1px solid rgba(232,177,106,.35);
+    border-radius: 999px;
+    padding: 3px 10px;
+  }
+  .badge[hidden] { display: none; }
+  main { flex: 1; overflow-y: auto; padding: 16px; }
+  .view[hidden] { display: none; }
+
+  textarea {
+    width: 100%;
+    min-height: 42vh;
+    resize: vertical;
+    background: var(--panel);
+    color: var(--text);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 14px;
+    font: inherit;
+    line-height: 1.5;
+  }
+  textarea:focus, input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+  button {
+    font: inherit;
+    border-radius: 12px;
+    border: 1px solid var(--line);
+    background: var(--panel-2);
+    color: var(--text);
+    padding: 12px 16px;
+    min-height: 48px;
+    cursor: pointer;
+  }
+  button.primary {
+    background: var(--accent);
+    color: var(--accent-ink);
+    border-color: var(--accent);
+    font-weight: 600;
+    width: 100%;
+    min-height: 56px;
+    font-size: 17px;
+    margin-top: 12px;
+  }
+  button:disabled { opacity: .5; }
+  button.danger { color: var(--err); border-color: rgba(232,138,138,.4); }
+
+  input[type=text], input[type=password] {
+    width: 100%;
+    background: var(--panel);
+    color: var(--text);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 12px;
+    font: inherit;
+    min-height: 48px;
+  }
+  label { display: block; font-size: 13px; color: var(--dim); margin: 16px 0 6px; }
+
+  .status { min-height: 22px; margin-top: 10px; font-size: 14px; color: var(--dim); }
+  .status.ok { color: var(--accent); }
+  .status.err { color: var(--err); }
+  .status.warn { color: var(--warn); }
+
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 14px;
+    margin-top: 14px;
+  }
+  .card h2 { font-size: 14px; color: var(--dim); font-weight: 600; margin: 0 0 10px; text-transform: uppercase; letter-spacing: .04em; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; }
+  .row > button { flex: 1; }
+  .queue-item {
+    border-top: 1px solid var(--line);
+    padding: 10px 0;
+    font-size: 14px;
+    color: var(--dim);
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .queue-item:first-of-type { border-top: 0; }
+  .queue-item time { display: block; font-size: 12px; color: #6f7688; margin-bottom: 3px; }
+  .hint { font-size: 13px; color: var(--dim); margin-top: 8px; }
+  .kv { display: flex; justify-content: space-between; gap: 12px; font-size: 14px; padding: 5px 0; }
+  .kv span:first-child { color: var(--dim); }
+
+  nav {
+    display: flex;
+    border-top: 1px solid var(--line);
+    background: var(--bg);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  nav button {
+    flex: 1;
+    border: 0;
+    background: transparent;
+    color: var(--dim);
+    border-radius: 0;
+    font-size: 14px;
+    min-height: 56px;
+  }
+  nav button[aria-selected="true"] { color: var(--accent); box-shadow: inset 0 2px 0 var(--accent); }
+</style>
+</head>
+<body>
+
+<header>
+  <h1 id="title">Инбокс</h1>
+  <span class="badge" id="queueBadge" hidden></span>
+</header>
+
+<main>
+  <section class="view" id="view-inbox">
+    <textarea id="entry" placeholder="Что на уме? Диктуйте микрофоном клавиатуры." autocomplete="off" autocapitalize="sentences"></textarea>
+    <button class="primary" id="send">Отправить</button>
+    <div class="status" id="inboxStatus"></div>
+
+    <div class="card" id="queueCard" hidden>
+      <h2>Не отправлено</h2>
+      <div id="queueList"></div>
+      <div class="row" style="margin-top:12px">
+        <button id="retry">Отправить сейчас</button>
+      </div>
+      <div class="hint">Записи хранятся в браузере и уйдут сами при следующем открытии.</div>
+    </div>
+  </section>
+
+  <section class="view" id="view-settings" hidden>
+    <label for="owner">Владелец на GitHub</label>
+    <input type="text" id="owner" placeholder="например barakshina" autocomplete="off" autocapitalize="none" spellcheck="false">
+
+    <label for="token">Токен (fine-grained PAT)</label>
+    <input type="password" id="token" placeholder="github_pat_..." autocomplete="off" autocapitalize="none" spellcheck="false">
+    <div class="row" style="margin-top:10px">
+      <button id="toggleToken">Показать</button>
+      <button id="check">Проверить</button>
+    </div>
+    <div class="status" id="settingsStatus"></div>
+
+    <div class="card" id="tokenCard" hidden>
+      <h2>Токен</h2>
+      <div class="kv"><span>Аккаунт</span><span id="kvLogin">-</span></div>
+      <div class="kv"><span>Истекает</span><span id="kvExp">-</span></div>
+      <div class="kv"><span>planner-data</span><span id="kvData">-</span></div>
+      <div class="kv"><span>diary</span><span id="kvDiary">-</span></div>
+    </div>
+
+    <div class="card">
+      <h2>Опасное</h2>
+      <button class="danger" id="wipe" style="width:100%">Стереть токен</button>
+      <div class="hint">Очередь неотправленных записей при этом сохраняется.</div>
+    </div>
+
+    <div class="hint" style="margin-top:18px">
+      Токен нужен с доступом к репозиториям <b>planner-data</b> и <b>diary</b>,
+      права <b>Contents: Read and write</b>. Он лежит только в этом браузере.
+    </div>
+  </section>
+</main>
+
+<nav>
+  <button data-tab="inbox" aria-selected="true">Инбокс</button>
+  <button data-tab="settings" aria-selected="false">Настройки</button>
+</nav>
+
+<script>
+(function () {
+  'use strict';
+
+  var LS = {
+    token: 'planner.token',
+    owner: 'planner.owner',
+    queue: 'planner.queue',
+    exp:   'planner.tokenExp'
+  };
+  var REPO_DATA = 'planner-data';
+  var REPO_DIARY = 'diary';
+  var API = 'https://api.github.com';
+
+  var $ = function (id) { return document.getElementById(id); };
+
+  function get(k, dflt) {
+    try { var v = localStorage.getItem(k); return v === null ? dflt : v; }
+    catch (e) { return dflt; }
+  }
+  function set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+  function del(k) { try { localStorage.removeItem(k); } catch (e) {} }
+
+  function readQueue() {
+    try {
+      var q = JSON.parse(get(LS.queue, '[]'));
+      return Array.isArray(q) ? q : [];
+    } catch (e) { return []; }
+  }
+  function writeQueue(q) { set(LS.queue, JSON.stringify(q)); }
+
+  /* ---------- слой GitHub API ---------- */
+
+  function ApiError(message, status, kind) {
+    this.name = 'ApiError';
+    this.message = message;
+    this.status = status;
+    this.kind = kind || 'http';
+  }
+  ApiError.prototype = Object.create(Error.prototype);
+
+  function b64(str) {
+    var bytes = new TextEncoder().encode(str);
+    var bin = '';
+    for (var i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+    return btoa(bin);
+  }
+
+  function api(path, opts) {
+    opts = opts || {};
+    var token = get(LS.token, '');
+    if (!token) {
+      return Promise.reject(new ApiError('Токен не задан. Откройте настройки.', 0, 'notoken'));
+    }
+    var headers = {
+      'Authorization': 'Bearer ' + token,
+      'Accept': 'application/vnd.github+json',
+      'X-GitHub-Api-Version': '2022-11-28'
+    };
+    if (opts.body) headers['Content-Type'] = 'application/json';
+
+    return fetch(API + path, {
+      method: opts.method || 'GET',
+      headers: headers,
+      body: opts.body ? JSON.stringify(opts.body) : undefined,
+      cache: 'no-store'
+    }).catch(function () {
+      throw new ApiError('Нет сети.', 0, 'network');
+    }).then(function (res) {
+      var exp = res.headers.get('github-authentication-token-expiration');
+      if (exp) set(LS.exp, exp);
+
+      return res.text().then(function (text) {
+        var data = null;
+        if (text) { try { data = JSON.parse(text); } catch (e) {} }
+
+        if (res.ok) return { status: res.status, data: data, headers: res.headers };
+
+        if (res.status === 401) {
+          throw new ApiError('Токен не принят (401). Скорее всего истёк, нужен новый.', 401, 'auth');
+        }
+        if (res.status === 403) {
+          if (res.headers.get('x-ratelimit-remaining') === '0') {
+            var reset = Number(res.headers.get('x-ratelimit-reset') || 0) * 1000;
+            var when = reset ? new Date(reset).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }) : '';
+            throw new ApiError('Лимит запросов GitHub исчерпан' + (when ? ', попробуйте после ' + when : '') + '.', 403, 'ratelimit');
+          }
+          throw new ApiError('Нет прав (403). Проверьте, что токен выдан на нужный репозиторий с правом Contents: Read and write.', 403, 'forbidden');
+        }
+        if (res.status === 404) {
+          throw new ApiError('Не найдено (404). Проверьте имя владельца и что токен видит репозиторий.', 404, 'notfound');
+        }
+        if (res.status === 409 || res.status === 422) {
+          throw new ApiError((data && data.message) || 'Конфликт при записи.', res.status, 'conflict');
+        }
+        throw new ApiError('GitHub ответил ' + res.status + '. ' + ((data && data.message) || ''), res.status, 'http');
+      });
+    });
+  }
+
+  function putFile(repo, path, text, message, sha) {
+    var owner = get(LS.owner, '').trim();
+    if (!owner) return Promise.reject(new ApiError('Не задан владелец репозитория. Откройте настройки.', 0, 'noowner'));
+    var body = { message: message, content: b64(text) };
+    if (sha) body.sha = sha;
+    return api('/repos/' + owner + '/' + repo + '/contents/' + path, { method: 'PUT', body: body });
+  }
+
+  /* ---------- инбокс ---------- */
+
+  function stamp(iso) {
+    return iso.replace(/\.\d+Z$/, 'Z').replace(/:/g, '-');
+  }
+
+  function renderQueue() {
+    var q = readQueue();
+    var badge = $('queueBadge');
+    if (q.length) {
+      badge.hidden = false;
+      badge.textContent = 'в очереди: ' + q.length;
+    } else {
+      badge.hidden = true;
+    }
+    $('queueCard').hidden = q.length === 0;
+    var list = $('queueList');
+    list.textContent = '';
+    q.forEach(function (item) {
+      var div = document.createElement('div');
+      div.className = 'queue-item';
+      var t = document.createElement('time');
+      t.textContent = new Date(item.ts).toLocaleString('ru-RU');
+      div.appendChild(t);
+      div.appendChild(document.createTextNode(
+        item.text.length > 160 ? item.text.slice(0, 160) + '...' : item.text
+      ));
+      list.appendChild(div);
+    });
+  }
+
+  function status(el, text, cls) {
+    el.textContent = text;
+    el.className = 'status' + (cls ? ' ' + cls : '');
+  }
+
+  var flushing = false;
+
+  function sendOne(item, attempt) {
+    attempt = attempt || 0;
+    var name = stamp(item.ts) + (attempt ? '-' + attempt : '') + '.md';
+    return putFile(REPO_DATA, 'inbox/' + name, item.text, 'inbox: ' + name)
+      .catch(function (err) {
+        // файл с таким именем уже есть, берём следующее имя
+        if (err.kind === 'conflict' && attempt < 5) return sendOne(item, attempt + 1);
+        throw err;
+      });
+  }
+
+  function flush(quiet) {
+    if (flushing) return Promise.resolve();
+    var q = readQueue();
+    if (!q.length) { renderQueue(); return Promise.resolve(); }
+    if (!get(LS.token, '')) {
+      if (!quiet) status($('inboxStatus'), 'Токен не задан, записи ждут в очереди.', 'warn');
+      return Promise.resolve();
+    }
+    flushing = true;
+
+    var sent = 0;
+    function step() {
+      var rest = readQueue();
+      if (!rest.length) return Promise.resolve();
+      return sendOne(rest[0]).then(function () {
+        var cur = readQueue();
+        cur = cur.filter(function (x) { return x.id !== rest[0].id; });
+        writeQueue(cur);
+        sent++;
+        renderQueue();
+        return step();
+      });
+    }
+
+    return step().then(function () {
+      flushing = false;
+      renderQueue();
+      if (sent) status($('inboxStatus'), sent === 1 ? 'Отправлено.' : 'Отправлено записей: ' + sent, 'ok');
+    }).catch(function (err) {
+      flushing = false;
+      renderQueue();
+      var left = readQueue().length;
+      var tail = left ? ' Записей в очереди: ' + left + '.' : '';
+      if (err.kind === 'network') {
+        status($('inboxStatus'), 'Нет сети.' + tail, 'warn');
+      } else {
+        status($('inboxStatus'), err.message + tail, 'err');
+      }
+    });
+  }
+
+  function submit() {
+    var ta = $('entry');
+    var text = ta.value.trim();
+    if (!text) { ta.focus(); return; }
+
+    var q = readQueue();
+    q.push({ id: 'q' + Date.now() + Math.random().toString(16).slice(2, 8), ts: new Date().toISOString(), text: text });
+    writeQueue(q);
+
+    ta.value = '';
+    ta.focus();
+    renderQueue();
+    status($('inboxStatus'), 'Отправляю...', '');
+    flush(false);
+  }
+
+  /* ---------- настройки ---------- */
+
+  function fmtExp(raw) {
+    if (!raw) return 'неизвестно';
+    var d = new Date(raw.replace(' UTC', 'Z').replace(' ', 'T'));
+    if (isNaN(d.getTime())) return raw;
+    var days = Math.round((d.getTime() - Date.now()) / 86400000);
+    return d.toLocaleDateString('ru-RU') + ' (через ' + days + ' дн.)';
+  }
+
+  function checkRepo(repo, cell) {
+    var owner = get(LS.owner, '').trim();
+    return api('/repos/' + owner + '/' + repo).then(function () {
+      cell.textContent = 'доступен';
+      cell.style.color = 'var(--accent)';
+      return true;
+    }).catch(function (err) {
+      cell.textContent = err.status === 404 ? 'не виден' : 'ошибка ' + err.status;
+      cell.style.color = 'var(--err)';
+      return false;
+    });
+  }
+
+  function check() {
+    var st = $('settingsStatus');
+    set(LS.token, $('token').value.trim());
+    set(LS.owner, $('owner').value.trim());
+    status(st, 'Проверяю...', '');
+
+    // GET /user некоторым fine-grained токенам недоступен, это не повод считать токен плохим:
+    // при ошибке кроме 401 просто идём дальше и проверяем сами репозитории.
+    api('/user').catch(function (err) {
+      if (err.kind === 'auth' || err.kind === 'network' || err.kind === 'notoken') throw err;
+      return { data: null };
+    }).then(function (r) {
+      $('tokenCard').hidden = false;
+      $('kvLogin').textContent = (r.data && r.data.login) || 'не показан';
+      if (!get(LS.owner, '').trim() && r.data && r.data.login) {
+        set(LS.owner, r.data.login);
+        $('owner').value = r.data.login;
+      }
+      $('kvExp').textContent = fmtExp(get(LS.exp, ''));
+      if (!get(LS.owner, '').trim()) {
+        throw new ApiError('Заполните поле «Владелец на GitHub».', 0, 'noowner');
+      }
+      return Promise.all([
+        checkRepo(REPO_DATA, $('kvData')),
+        checkRepo(REPO_DIARY, $('kvDiary'))
+      ]);
+    }).then(function (res) {
+      $('kvExp').textContent = fmtExp(get(LS.exp, ''));
+      if (res[0] && res[1]) status(st, 'Токен рабочий, оба репозитория видны.', 'ok');
+      else status(st, 'Токен принят, но не все репозитории доступны.', 'warn');
+      flush(true);
+    }).catch(function (err) {
+      status(st, err.message, 'err');
+    });
+  }
+
+  /* ---------- вкладки ---------- */
+
+  var TITLES = { inbox: 'Инбокс', settings: 'Настройки' };
+
+  function showTab(name) {
+    ['inbox', 'settings'].forEach(function (t) {
+      $('view-' + t).hidden = (t !== name);
+    });
+    Array.prototype.forEach.call(document.querySelectorAll('nav button'), function (b) {
+      b.setAttribute('aria-selected', String(b.dataset.tab === name));
+    });
+    $('title').textContent = TITLES[name];
+    if (name === 'inbox') $('entry').focus();
+  }
+
+  /* ---------- запуск ---------- */
+
+  $('send').addEventListener('click', submit);
+  $('retry').addEventListener('click', function () { flush(false); });
+  $('check').addEventListener('click', check);
+  $('toggleToken').addEventListener('click', function () {
+    var i = $('token');
+    var hidden = i.type === 'password';
+    i.type = hidden ? 'text' : 'password';
+    this.textContent = hidden ? 'Скрыть' : 'Показать';
+  });
+  $('wipe').addEventListener('click', function () {
+    if (!confirm('Стереть токен из этого браузера?')) return;
+    del(LS.token); del(LS.exp);
+    $('token').value = '';
+    $('tokenCard').hidden = true;
+    status($('settingsStatus'), 'Токен стёрт.', 'warn');
+  });
+  $('owner').addEventListener('change', function () { set(LS.owner, this.value.trim()); });
+  $('token').addEventListener('change', function () { set(LS.token, this.value.trim()); });
+
+  Array.prototype.forEach.call(document.querySelectorAll('nav button'), function (b) {
+    b.addEventListener('click', function () { showTab(b.dataset.tab); });
+  });
+
+  // Ctrl+Enter отправляет с физической клавиатуры
+  $('entry').addEventListener('keydown', function (e) {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); submit(); }
+  });
+
+  window.addEventListener('online', function () { flush(true); });
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'visible') flush(true);
+  });
+
+  $('owner').value = get(LS.owner, '');
+  $('token').value = get(LS.token, '');
+  renderQueue();
+
+  if (!get(LS.token, '')) {
+    showTab('settings');
+    status($('settingsStatus'), 'Вставьте токен и нажмите «Проверить».', 'warn');
+  } else {
+    showTab('inbox');
+    flush(true);
+  }
+})();
+</script>
+</body>
+</html>
