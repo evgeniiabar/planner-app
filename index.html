@@ -223,6 +223,7 @@
     queue: 'planner.queue',
     exp:   'planner.tokenExp'
   };
+  var DEFAULT_OWNER = 'evgeniiabar';
   var REPO_DATA = 'planner-data';
   var REPO_DIARY = 'diary';
   var API = 'https://api.github.com';
@@ -536,7 +537,8 @@
     if (document.visibilityState === 'visible') flush(true);
   });
 
-  $('owner').value = get(LS.owner, '');
+  if (!get(LS.owner, '')) set(LS.owner, DEFAULT_OWNER);
+  $('owner').value = get(LS.owner, DEFAULT_OWNER);
   $('token').value = get(LS.token, '');
   renderQueue();
 
