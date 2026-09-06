@@ -203,8 +203,9 @@
     background: transparent;
     color: var(--dim);
     border-radius: 0;
-    font-size: 14px;
+    font-size: 13px;
     min-height: 56px;
+    padding: 0 2px;
   }
   nav button[aria-selected="true"] { color: var(--accent); box-shadow: inset 0 2px 0 var(--accent); }
 </style>
@@ -236,6 +237,12 @@
     <div id="planBody"></div>
     <div class="status" id="planStatus"></div>
     <div class="row" style="margin-top:16px"><button id="planReload">Обновить</button></div>
+  </section>
+
+  <section class="view" id="view-all" hidden>
+    <div id="allBody"></div>
+    <div class="status" id="allStatus"></div>
+    <div class="row" style="margin-top:16px"><button id="allReload">Обновить</button></div>
   </section>
 
   <section class="view" id="view-stale" hidden>
@@ -280,6 +287,7 @@
 <nav>
   <button data-tab="inbox" aria-selected="true">Инбокс</button>
   <button data-tab="plan" aria-selected="false">План</button>
+  <button data-tab="all" aria-selected="false">Всё</button>
   <button data-tab="stale" aria-selected="false">Зависшее</button>
   <button data-tab="settings" aria-selected="false">Настройки</button>
 </nav>
@@ -695,6 +703,80 @@
     });
   }
 
+  /* ---------- все задачи ---------- */
+
+  function backlogRow(t, waiting) {
+    var row = el('div', 'task');
+    var body = el('div', 'body');
+    body.appendChild(el('div', 't', t.title));
+
+    var meta = el('div', 'meta');
+    if (t.carry_count) meta.appendChild(el('span', 'tag', 'перенос ' + t.carry_count));
+    if (waiting != null && waiting > 0) meta.appendChild(el('span', 'tag', 'ждёт ' + waiting + ' дн.'));
+
+    var bits = [];
+    if (t.est_min) bits.push(t.est_min + ' мин');
+    if (t.due) bits.push('до ' + t.due);
+    meta.appendChild(document.createTextNode(bits.join(' · ')));
+    body.appendChild(meta);
+
+    row.appendChild(body);
+    return row;
+  }
+
+  function renderAll(backlog) {
+    var body = $('allBody');
+    body.textContent = '';
+
+    var open = ((backlog && backlog.tasks) || []).filter(function (t) { return t.status === 'open'; });
+    if (!open.length) {
+      body.appendChild(el('div', 'empty', 'Задач нет. Всё, что вы надиктуете в инбокс, вечерний прогон положит сюда.'));
+      return;
+    }
+
+    var today = mskToday();
+    var inPlan = [];
+    var waiting = [];
+    open.forEach(function (t) {
+      if (t.last_planned_date === today) inPlan.push(t);
+      else waiting.push(t);
+    });
+
+    waiting.forEach(function (t) { t._w = daysSince(t.last_planned_date || t.first_seen, today); });
+    waiting.sort(function (a, b) { return b._w - a._w; });
+
+    if (inPlan.length) {
+      body.appendChild(el('div', 'block-title', 'В плане сегодня (' + inPlan.length + ')'));
+      inPlan.forEach(function (t) { body.appendChild(backlogRow(t, null)); });
+    }
+    if (waiting.length) {
+      body.appendChild(el('div', 'block-title', 'Ждут своего дня (' + waiting.length + ')'));
+      waiting.forEach(function (t) { body.appendChild(backlogRow(t, t._w)); });
+    }
+  }
+
+  function daysSince(from, to) {
+    var a = Date.parse(from + 'T00:00:00Z');
+    var b = Date.parse(to + 'T00:00:00Z');
+    if (isNaN(a) || isNaN(b)) return 0;
+    return Math.round((b - a) / 86400000);
+  }
+
+  function loadAll(quiet) {
+    if (!quiet) status($('allStatus'), 'Загружаю...', '');
+    return getJson(REPO_DATA, 'backlog.json').then(function (f) {
+      renderAll(f.json);
+      status($('allStatus'), '', '');
+    }).catch(function (err) {
+      if (err.status === 404) {
+        renderAll(null);
+        status($('allStatus'), '', '');
+        return;
+      }
+      status($('allStatus'), err.message, 'err');
+    });
+  }
+
   /* ---------- зависшее ---------- */
 
   var DECISIONS = [
@@ -849,8 +931,8 @@
 
   /* ---------- вкладки ---------- */
 
-  var TITLES = { inbox: 'Инбокс', plan: 'План', stale: 'Зависшее', settings: 'Настройки' };
-  var TABS = ['inbox', 'plan', 'stale', 'settings'];
+  var TITLES = { inbox: 'Инбокс', plan: 'План', all: 'Все задачи', stale: 'Зависшее', settings: 'Настройки' };
+  var TABS = ['inbox', 'plan', 'all', 'stale', 'settings'];
 
   function showTab(name) {
     TABS.forEach(function (t) {
@@ -862,6 +944,7 @@
     $('title').textContent = TITLES[name];
     if (name === 'inbox') $('entry').focus();
     if (name === 'plan') loadPlan(false);
+    if (name === 'all') loadAll(false);
     if (name === 'stale') loadStale(false);
   }
 
@@ -871,6 +954,7 @@
   $('retry').addEventListener('click', function () { flush(false); });
   $('check').addEventListener('click', check);
   $('planReload').addEventListener('click', function () { loadPlan(false); });
+  $('allReload').addEventListener('click', function () { loadAll(false); });
   $('staleReload').addEventListener('click', function () { loadStale(false); });
   $('toggleToken').addEventListener('click', function () {
     var i = $('token');
