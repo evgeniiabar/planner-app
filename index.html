@@ -1032,6 +1032,25 @@
     return out;
   }
 
+  // Раздел, из которого всё вычеркнули, не должен висеть пустым заголовком.
+  // Трогаем только те, где вообще ничего не осталось: подпись под заголовком
+  // означает, что человек написал её руками, и она остаётся.
+  function dropEmptySections(lines) {
+    var out = lines.slice();
+    for (var i = 0; i < out.length; i++) {
+      if (out[i] === null || !/^##\s+/.test(out[i])) continue;
+      var empty = true;
+      var j = i + 1;
+      for (; j < out.length; j++) {
+        if (out[j] === null) continue;
+        if (/^##\s+/.test(out[j])) break;
+        if (String(out[j]).trim() !== '') { empty = false; break; }
+      }
+      if (empty) { for (var k = i; k < j; k++) out[k] = null; }
+    }
+    return out;
+  }
+
   function shoppingWith(text, change) {
     var doc = parseShopping(text);
     if (change(doc) === false) return null;
@@ -1044,7 +1063,7 @@
         if (doc.addBySection[name].length) lines = insertInto(lines, name, doc.addBySection[name]);
       });
     }
-    var out = lines.filter(function (l) { return l !== null; }).join('\n');
+    var out = dropEmptySections(lines).filter(function (l) { return l !== null; }).join('\n');
     if (out && !out.endsWith('\n')) out += '\n';
     return out;
   }
