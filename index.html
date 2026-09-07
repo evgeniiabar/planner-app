@@ -94,6 +94,15 @@
   button:disabled { opacity: .5; }
   button.danger { color: var(--err); border-color: rgba(232,138,138,.4); }
 
+  select {
+    font: inherit;
+    background: var(--panel-2);
+    color: var(--text);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 12px;
+    min-height: 48px;
+  }
   input[type=text], input[type=password] {
     width: 100%;
     background: var(--panel);
@@ -256,6 +265,16 @@
       </div>
       <div class="hint">Записи хранятся в браузере и уйдут сами при следующем открытии.</div>
     </div>
+
+    <div class="card" id="pendingCard" hidden>
+      <h2 id="pendingTitle">Ждут разбора</h2>
+      <div id="pendingBody"></div>
+      <div class="row" style="margin-top:12px">
+        <button id="runEveningInbox">Разобрать сейчас</button>
+      </div>
+      <div class="status" id="pendingStatus"></div>
+      <div class="hint" id="pendingHint"></div>
+    </div>
   </section>
 
   <section class="view" id="view-plan" hidden>
@@ -287,6 +306,12 @@
       <label for="shopNew">Добавить вручную</label>
       <input type="text" id="shopNew" placeholder="что купить" autocomplete="off">
       <div class="row" style="margin-top:10px">
+        <select id="shopSec" aria-label="Раздел">
+          <option>Продукты</option>
+          <option>Аптека</option>
+          <option>Хозтовары</option>
+          <option>Разное</option>
+        </select>
         <button id="shopAdd">Добавить</button>
         <button id="shopClear">Убрать купленное</button>
       </div>
@@ -538,7 +563,10 @@
     return step().then(function () {
       flushing = false;
       renderQueue();
-      if (sent) status($('inboxStatus'), sent === 1 ? 'Отправлено.' : 'Отправлено записей: ' + sent, 'ok');
+      if (sent) {
+        status($('inboxStatus'), sent === 1 ? 'Отправлено.' : 'Отправлено записей: ' + sent, 'ok');
+        loadPending(true);
+      }
     }).catch(function (err) {
       flushing = false;
       renderQueue();
@@ -967,14 +995,41 @@
   var shopCache = null;
   var recipesCache = null;
 
+  var SHOP_SECTIONS = ['Продукты', 'Аптека', 'Хозтовары', 'Разное'];
+
   function parseShopping(text) {
     var lines = (text || '# Покупки\n').split('\n');
     var items = [];
+    var sec = null;
     lines.forEach(function (line, i) {
+      var h = /^##\s+(.+?)\s*$/.exec(line);
+      if (h) { sec = h[1]; return; }
       var m = /^\s*[-*]\s+\[([ xX])\]\s*(.*)$/.exec(line);
-      if (m) items.push({ line: i, done: m[1].toLowerCase() === 'x', text: m[2].trim() });
+      if (m) items.push({ line: i, done: m[1].toLowerCase() === 'x', text: m[2].trim(), section: sec });
     });
     return { lines: lines, items: items };
+  }
+
+  // Новый пункт встаёт в конец своего раздела, а не в конец файла.
+  function insertInto(lines, name, texts) {
+    var out = lines.slice();
+    var add = texts.map(function (t) { return '- [ ] ' + t; });
+    var hi = -1;
+    for (var i = 0; i < out.length; i++) {
+      var h = out[i] === null ? null : /^##\s+(.+?)\s*$/.exec(out[i]);
+      if (h && h[1].toLowerCase() === String(name).toLowerCase()) { hi = i; break; }
+    }
+    if (hi === -1) {
+      var gap = out.length && String(out[out.length - 1] || '').trim() === '' ? [] : [''];
+      return out.concat(gap, ['## ' + name], add);
+    }
+    var end = out.length;
+    for (var j = hi + 1; j < out.length; j++) {
+      if (out[j] !== null && /^##\s+/.test(out[j])) { end = j; break; }
+    }
+    while (end > hi + 1 && (out[end - 1] === null || String(out[end - 1]).trim() === '')) end--;
+    out.splice.apply(out, [end, 0].concat(add));
+    return out;
   }
 
   function shoppingWith(text, change) {
@@ -983,11 +1038,14 @@
     doc.items.forEach(function (it) {
       if (it.line >= 0) doc.lines[it.line] = '- [' + (it.done ? 'x' : ' ') + '] ' + it.text;
     });
-    var out = doc.lines.filter(function (l) { return l !== null; }).join('\n');
-    if (doc.added && doc.added.length) {
-      if (out && !out.endsWith('\n')) out += '\n';
-      out += doc.added.map(function (t) { return '- [ ] ' + t; }).join('\n') + '\n';
+    var lines = doc.lines;
+    if (doc.addBySection) {
+      Object.keys(doc.addBySection).forEach(function (name) {
+        if (doc.addBySection[name].length) lines = insertInto(lines, name, doc.addBySection[name]);
+      });
     }
+    var out = lines.filter(function (l) { return l !== null; }).join('\n');
+    if (out && !out.endsWith('\n')) out += '\n';
     return out;
   }
 
@@ -999,7 +1057,12 @@
       body.appendChild(el('div', 'empty', 'Список пуст. Скажите в инбокс, что купить, и вечерний прогон положит это сюда.'));
       return;
     }
+    var shown = null;
     items.forEach(function (it) {
+      if (it.section !== shown) {
+        shown = it.section;
+        if (shown) body.appendChild(el('div', 'block-title', shown));
+      }
       var row = el('div', 'task' + (it.done ? ' done' : ''));
       var box = el('button', 'box', it.done ? '✓' : '');
       box.setAttribute('aria-label', 'Куплено');
@@ -1036,13 +1099,16 @@
     }, 'покупки: ' + text);
   }
 
-  function addShop(list) {
+  function addShop(list, section) {
+    var name = SHOP_SECTIONS.indexOf(section) === -1 ? 'Разное' : section;
     var clean = list.map(function (t) { return String(t).trim(); }).filter(Boolean);
     if (!clean.length) return Promise.resolve();
     return saveShopping(function (doc) {
       var have = doc.items.map(function (it) { return it.text.toLowerCase(); });
-      doc.added = clean.filter(function (t) { return have.indexOf(t.toLowerCase()) === -1; });
-      return doc.added.length > 0;
+      var add = clean.filter(function (t) { return have.indexOf(t.toLowerCase()) === -1; });
+      doc.addBySection = {};
+      doc.addBySection[name] = add;
+      return add.length > 0;
     }, 'покупки: добавлено ' + clean.length);
   }
 
@@ -1088,7 +1154,7 @@
         btn.style.width = '100%';
         btn.style.marginTop = '10px';
         btn.addEventListener('click', function () {
-          addShop(r.ingredients).then(function () {
+          addShop(r.ingredients, 'Продукты').then(function () {
             showFoodPane('shop');
           });
         });
@@ -1145,9 +1211,9 @@
 
   // Прогон запускается не мгновенно, поэтому ждём появления прогона с новым id,
   // иначе можно принять прошлый успешный за только что запущенный.
-  function pollRun(file, label, before, n) {
+  function pollRun(file, label, before, n, st) {
     if (n > 30) {
-      status($('runStatus'), label + ': идёт дольше обычного, нажмите «Обновить» позже.', 'warn');
+      status(st, label + ': идёт дольше обычного, нажмите «Обновить» позже.', 'warn');
       return Promise.resolve();
     }
     return new Promise(function (done) { setTimeout(done, 6000); }).then(function () {
@@ -1155,43 +1221,45 @@
     }).then(function (r) {
       var run = (r.data && r.data.workflow_runs || [])[0];
       if (!run || run.id === before || run.status !== 'completed') {
-        return pollRun(file, label, before, n + 1);
+        return pollRun(file, label, before, n + 1, st);
       }
       if (run.conclusion === 'success') {
-        status($('runStatus'), label + ': готово.', 'ok');
+        status(st, label + ': готово.', 'ok');
         loadState();
         loadPlan(true);
         loadAll(true);
         loadFood(true);
+        loadPending(true);
         return;
       }
-      status($('runStatus'), label + ': прогон упал (' + run.conclusion + '). Данные не тронуты.', 'err');
+      status(st, label + ': прогон упал (' + run.conclusion + '). Данные не тронуты.', 'err');
     }).catch(function (err) {
-      status($('runStatus'), err.message, 'err');
+      status(st, err.message, 'err');
     });
   }
 
-  function runWorkflow(kind, label) {
+  var RUN_BUTTONS = ['runMorning', 'runEvening', 'runEveningInbox'];
+
+  function runWorkflow(kind, label, statusId) {
     var file = WORKFLOWS[kind];
-    $('runMorning').disabled = true;
-    $('runEvening').disabled = true;
-    status($('runStatus'), label + ': запускаю...', '');
+    var st = $(statusId || 'runStatus');
+    RUN_BUTTONS.forEach(function (id) { $(id).disabled = true; });
+    status(st, label + ': запускаю...', '');
 
     return lastRunId(file).then(function (before) {
       return api(runsUrl(file, '/dispatches'), { method: 'POST', body: { ref: 'main' } })
         .then(function () {
-          status($('runStatus'), label + ': запущен, жду результата...', '');
-          return pollRun(file, label, before, 0);
+          status(st, label + ': запущен, жду результата...', '');
+          return pollRun(file, label, before, 0, st);
         });
     }).catch(function (err) {
       if (err.status === 403 || err.status === 404) {
-        status($('runStatus'), 'Не хватает прав на запуск. Токену нужно право Actions: Read and write.', 'err');
+        status(st, 'Не хватает прав на запуск. Токену нужно право Actions: Read and write.', 'err');
       } else {
-        status($('runStatus'), err.message, 'err');
+        status(st, err.message, 'err');
       }
     }).then(function () {
-      $('runMorning').disabled = false;
-      $('runEvening').disabled = false;
+      RUN_BUTTONS.forEach(function (id) { $(id).disabled = false; });
     });
   }
 
@@ -1199,6 +1267,7 @@
     return getJson(REPO_DATA, 'state.json').then(function (f) {
       $('kvMorning').textContent = f.json.last_morning_run ? new Date(f.json.last_morning_run).toLocaleString('ru-RU') : 'не было';
       $('kvEvening').textContent = f.json.last_evening_run ? new Date(f.json.last_evening_run).toLocaleString('ru-RU') : 'не было';
+      lastSummary = { at: f.json.last_evening_run || null, sum: f.json.last_evening_summary || null };
     }).catch(function () {});
   }
 
@@ -1261,6 +1330,81 @@
     });
   }
 
+  /* ---------- очередь на сервере ---------- */
+
+  var lastSummary = null;
+
+  function fileWhen(name) {
+    var m = /^(\d{4}-\d{2}-\d{2})T(\d{2})-(\d{2})-(\d{2})Z/.exec(name);
+    if (!m) return name;
+    var d = new Date(m[1] + "T" + m[2] + ":" + m[3] + ":" + m[4] + "Z");
+    if (isNaN(d.getTime())) return name;
+    return d.toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+  }
+
+  function summaryLine(sum) {
+    var parts = [];
+    if (sum.tasks) parts.push("задач " + sum.tasks);
+    if (sum.events) parts.push("встреч " + sum.events);
+    if (sum.reminders) parts.push("напоминаний " + sum.reminders);
+    if (sum.list) parts.push("в покупки " + sum.list);
+    if (sum.recipes) parts.push("рецептов " + sum.recipes);
+    if (sum.journal) parts.push("в дневник " + sum.journal);
+    return parts.length ? parts.join(", ") : "ничего нового";
+  }
+
+  function renderPending(res) {
+    var card = $("pendingCard");
+    var body = $("pendingBody");
+    body.textContent = "";
+    card.hidden = false;
+    var n = res ? res.count : 0;
+    $("pendingTitle").textContent = n ? "Ждут разбора: " + n : "Инбокс разобран";
+    $("runEveningInbox").hidden = !n;
+    (res && res.items || []).forEach(function (it) {
+      var div = el("div", "queue-item");
+      var t = document.createElement("time");
+      t.textContent = it.when;
+      div.appendChild(t);
+      div.appendChild(document.createTextNode(it.text || "(пусто)"));
+      body.appendChild(div);
+    });
+    if (n > (res.items || []).length) {
+      body.appendChild(el("div", "hint", "и ещё " + (n - res.items.length)));
+    }
+    var hint = "";
+    if (lastSummary && lastSummary.at) {
+      hint = "Последний разбор: " + new Date(lastSummary.at).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+      if (lastSummary.sum) hint += ". Разобрано: " + summaryLine(lastSummary.sum) + ".";
+    }
+    if (n) hint += (hint ? " " : "") + "Сам разбор в 22:00, но можно не ждать.";
+    $("pendingHint").textContent = hint;
+  }
+
+  var PENDING_SHOWN = 10;
+
+  function loadPending(quiet) {
+    var owner = get(LS.owner, "").trim();
+    if (!owner || !get(LS.token, "")) return Promise.resolve();
+    return loadState().then(function () {
+      return api("/repos/" + owner + "/" + REPO_DATA + "/contents/inbox");
+    }).then(function (r) {
+      var files = (r.data || []).filter(function (f) {
+        return f.type === "file" && /\.md$/.test(f.name);
+      }).sort(function (a, b) { return a.name < b.name ? 1 : -1; });
+      return Promise.all(files.slice(0, PENDING_SHOWN).map(function (f) {
+        return getFile(REPO_DATA, "inbox/" + f.name).then(function (x) {
+          return { when: fileWhen(f.name), text: x.text.trim() };
+        }).catch(function () { return { when: fileWhen(f.name), text: "" }; });
+      })).then(function (items) { return { count: files.length, items: items }; });
+    }).then(function (res) {
+      renderPending(res);
+    }).catch(function (err) {
+      if (err.status === 404) { renderPending({ count: 0, items: [] }); return; }
+      if (!quiet) status($("pendingStatus"), err.message, "err");
+    });
+  }
+
   /* ---------- вкладки ---------- */
 
   var TITLES = { inbox: 'Инбокс', plan: 'План', all: 'Все задачи', stale: 'Зависшее', food: 'Еда', settings: 'Настройки' };
@@ -1274,7 +1418,7 @@
       b.setAttribute('aria-selected', String(b.dataset.tab === name));
     });
     $('title').textContent = TITLES[name];
-    if (name === 'inbox') $('entry').focus();
+    if (name === 'inbox') { $('entry').focus(); loadPending(true); }
     if (name === 'plan') loadPlan(false);
     if (name === 'all') loadAll(false);
     if (name === 'stale') loadStale(false);
@@ -1298,11 +1442,14 @@
     var v = $('shopNew').value.trim();
     if (!v) return;
     $('shopNew').value = '';
-    addShop([v]);
+    addShop([v], $('shopSec').value);
   });
   $('shopClear').addEventListener('click', clearBought);
   $('runMorning').addEventListener('click', function () { runWorkflow('morning', 'Утренний прогон'); });
   $('runEvening').addEventListener('click', function () { runWorkflow('evening', 'Вечерний прогон'); });
+  $('runEveningInbox').addEventListener('click', function () {
+    runWorkflow('evening', 'Разбор', 'pendingStatus');
+  });
   $('toggleToken').addEventListener('click', function () {
     var i = $('token');
     var hidden = i.type === 'password';
