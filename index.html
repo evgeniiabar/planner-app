@@ -803,7 +803,7 @@
     return row;
   }
 
-  function renderAll(backlog) {
+  function renderAll(backlog, plan) {
     var body = $('allBody');
     body.textContent = '';
 
@@ -814,10 +814,16 @@
     }
 
     var today = mskToday();
+    var planned = null;
+    if (plan && plan.tasks) {
+      planned = {};
+      plan.tasks.forEach(function (t) { planned[t.id] = true; });
+    }
     var inPlan = [];
     var waiting = [];
     open.forEach(function (t) {
-      if (t.last_planned_date === today) inPlan.push(t);
+      var today_ = planned ? !!planned[t.id] : t.last_planned_date === today;
+      if (today_) inPlan.push(t);
       else waiting.push(t);
     });
 
@@ -843,12 +849,18 @@
 
   function loadAll(quiet) {
     if (!quiet) status($('allStatus'), 'Загружаю...', '');
-    return getJson(REPO_DATA, 'backlog.json').then(function (f) {
-      renderAll(f.json);
+    return Promise.all([
+      getJson(REPO_DATA, 'backlog.json'),
+      getJson(REPO_DATA, 'plans/' + mskToday() + '.json').catch(function (e) {
+        if (e.status === 404) return { json: null };
+        throw e;
+      })
+    ]).then(function (r) {
+      renderAll(r[0].json, r[1].json);
       status($('allStatus'), '', '');
     }).catch(function (err) {
       if (err.status === 404) {
-        renderAll(null);
+        renderAll(null, null);
         status($('allStatus'), '', '');
         return;
       }
