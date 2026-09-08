@@ -94,6 +94,23 @@
   button:disabled { opacity: .5; }
   button.danger { color: var(--err); border-color: rgba(232,138,138,.4); }
 
+  .check {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 14px;
+    padding: 8px 0;
+    cursor: pointer;
+  }
+  .check input { width: 20px; height: 20px; accent-color: var(--accent, #6f7688); }
+  .entry {
+    border-top: 1px solid var(--line);
+    padding: 14px 0;
+    white-space: pre-wrap;
+    word-break: break-word;
+    line-height: 1.45;
+  }
+  .entry time { display: block; font-size: 12px; color: var(--dim); margin-bottom: 6px; }
   select {
     font: inherit;
     background: var(--panel-2);
@@ -234,7 +251,7 @@
     background: transparent;
     color: var(--dim);
     border-radius: 0;
-    font-size: 13px;
+    font-size: 12px;
     min-height: 56px;
     padding: 0 2px;
   }
@@ -325,6 +342,26 @@
     <div class="row" style="margin-top:12px"><button id="foodReload">Обновить</button></div>
   </section>
 
+  <section class="view" id="view-diary" hidden>
+    <textarea id="dEntry" placeholder="Своими словами. Это никуда не разбирается и никем не переписывается."></textarea>
+    <button class="primary" id="dSend">Записать</button>
+    <div class="status" id="diaryStatus"></div>
+
+    <div class="card" id="dQueueCard" hidden>
+      <h2>Не отправлено</h2>
+      <div id="dQueueList"></div>
+      <div class="row" style="margin-top:12px"><button id="dRetry">Отправить сейчас</button></div>
+      <div class="hint">Записи лежат в этом браузере и уйдут сами, когда появится сеть.</div>
+    </div>
+
+    <div class="row" style="margin-top:18px">
+      <select id="dMonth" aria-label="Месяц"></select>
+      <button id="dReload">Обновить</button>
+      <button id="dExport">Выгрузить</button>
+    </div>
+    <div id="dBody"></div>
+  </section>
+
   <section class="view" id="view-settings" hidden>
     <label for="owner">Владелец на GitHub</label>
     <input type="text" id="owner" placeholder="например barakshina" autocomplete="off" autocapitalize="none" spellcheck="false">
@@ -353,6 +390,8 @@
         <button id="runEvening">Разобрать инбокс</button>
         <button id="runMorning">Собрать план</button>
       </div>
+      <label class="check"><input type="checkbox" id="autoMorning"> Утро по расписанию, около 06:00</label>
+      <label class="check"><input type="checkbox" id="autoEvening"> Вечер по расписанию, около 22:00</label>
       <div class="status" id="runStatus"></div>
       <div class="hint">Кнопкам нужно право токена Actions: Read and write. Прогон занимает около минуты.</div>
     </div>
@@ -376,6 +415,7 @@
   <button data-tab="all" aria-selected="false">Всё</button>
   <button data-tab="stale" aria-selected="false">Зависшее</button>
   <button data-tab="food" aria-selected="false">Еда</button>
+  <button data-tab="diary" aria-selected="false">Дневник</button>
 </nav>
 
 <script>
@@ -556,6 +596,7 @@
         writeQueue(cur);
         sent++;
         renderQueue();
+  renderDQueue();
         return step();
       });
     }
@@ -1290,6 +1331,38 @@
     }).catch(function () {});
   }
 
+  // Выключатель гасит только расписание: кнопки ручного прогона работают всегда.
+  var SETTINGS_PATH = "settings.json";
+
+  function loadSettings() {
+    return getJson(REPO_DATA, SETTINGS_PATH).then(function (f) {
+      $("autoMorning").checked = f.json.auto_morning !== false;
+      $("autoEvening").checked = f.json.auto_evening !== false;
+    }).catch(function () {
+      $("autoMorning").checked = true;
+      $("autoEvening").checked = true;
+    });
+  }
+
+  function saveSettings() {
+    var morning = $("autoMorning").checked;
+    var evening = $("autoEvening").checked;
+    status($("runStatus"), "Сохраняю...", "");
+    return updateFile(REPO_DATA, SETTINGS_PATH, function (text) {
+      var cur = {};
+      try { cur = JSON.parse(text) || {}; } catch (e) { cur = {}; }
+      cur.schema_version = 1;
+      cur.auto_morning = morning;
+      cur.auto_evening = evening;
+      return JSON.stringify(cur, null, 2) + '\n';
+    }, "настройки: автопрогон").then(function () {
+      status($("runStatus"), "Сохранено.", "ok");
+    }).catch(function (err) {
+      status($("runStatus"), err.message, "err");
+      loadSettings();
+    });
+  }
+
   /* ---------- настройки ---------- */
 
   function fmtExp(raw) {
@@ -1302,10 +1375,13 @@
 
   function checkRepo(repo, cell) {
     var owner = get(LS.owner, '').trim();
-    return api('/repos/' + owner + '/' + repo).then(function () {
-      cell.textContent = 'доступен';
-      cell.style.color = 'var(--accent)';
-      return true;
+    return api('/repos/' + owner + '/' + repo).then(function (r) {
+      // Видеть репозиторий и мочь в него писать это разные права, и разницу
+      // видно только здесь: 403 при записи иначе всплывёт в самый неудобный момент.
+      var write = !!(r.data && r.data.permissions && r.data.permissions.push);
+      cell.textContent = write ? 'чтение и запись' : 'только чтение';
+      cell.style.color = write ? 'var(--accent)' : 'var(--warn)';
+      return write;
     }).catch(function (err) {
       cell.textContent = err.status === 404 ? 'не виден' : 'ошибка ' + err.status;
       cell.style.color = 'var(--err)';
@@ -1341,11 +1417,227 @@
       ]);
     }).then(function (res) {
       $('kvExp').textContent = fmtExp(get(LS.exp, ''));
-      if (res[0] && res[1]) status(st, 'Токен рабочий, оба репозитория видны.', 'ok');
-      else status(st, 'Токен принят, но не все репозитории доступны.', 'warn');
+      if (res[0] && res[1]) status(st, 'Токен рабочий, в оба репозитория можно писать.', 'ok');
+      else status(st, 'Токен принят, но куда-то писать нельзя. Смотрите строки ниже.', 'warn');
       flush(true);
     }).catch(function (err) {
       status(st, err.message, 'err');
+    });
+  }
+
+  /* ---------- дневник ---------- */
+
+  // Дневник живёт в отдельном репозитории и через разбор не проходит вообще:
+  // текст пишется дословно, приложение только добавляет заголовок с датой.
+  var DIARY_QUEUE = "planner.dqueue";
+  var diaryMonths = [];
+  var diaryShown = null;
+
+  function mskParts(at) {
+    var d = new Date((at || Date.now()) + 3 * 3600 * 1000).toISOString();
+    return { date: d.slice(0, 10), time: d.slice(11, 16) };
+  }
+
+  function diaryPath(month) { return "journal/" + month + ".md"; }
+
+  function readDQueue() {
+    try { return JSON.parse(get(DIARY_QUEUE, "[]")) || []; } catch (e) { return []; }
+  }
+
+  function writeDQueue(q) { set(DIARY_QUEUE, JSON.stringify(q)); }
+
+  function parseDiary(text) {
+    var out = [];
+    var cur = null;
+    (text || "").split("\n").forEach(function (line) {
+      var m = /^##\s+(\d{4}-\d{2}-\d{2})(?:\s+(\d{2}:\d{2}))?\s*$/.exec(line);
+      if (m) { cur = { date: m[1], time: m[2] || "", lines: [] }; out.push(cur); return; }
+      if (cur) cur.lines.push(line);
+    });
+    return out.map(function (e) {
+      return { date: e.date, time: e.time, text: e.lines.join("\n").trim() };
+    }).filter(function (e) { return e.text; });
+  }
+
+  function entryBlock(item) {
+    return "## " + item.date + " " + item.time + "\n\n" + item.text.trim() + "\n";
+  }
+
+  // Повторная отправка после потерянного ответа не должна удваивать запись.
+  function diaryAppend(item) {
+    var month = item.date.slice(0, 7);
+    var block = entryBlock(item);
+    return updateFile(REPO_DIARY, diaryPath(month), function (text) {
+      var out = text || ("# " + month + "\n");
+      if (out.indexOf(block) > -1) return null;
+      if (out.charAt(out.length - 1) !== "\n") out += "\n";
+      return out + "\n" + block;
+    }, "дневник: " + item.date);
+  }
+
+  function renderDQueue() {
+    var q = readDQueue();
+    $("dQueueCard").hidden = q.length === 0;
+    var list = $("dQueueList");
+    list.textContent = "";
+    q.forEach(function (item) {
+      var div = el("div", "queue-item");
+      var t = document.createElement("time");
+      t.textContent = item.date + " " + item.time;
+      div.appendChild(t);
+      div.appendChild(document.createTextNode(
+        item.text.length > 160 ? item.text.slice(0, 160) + "..." : item.text
+      ));
+      list.appendChild(div);
+    });
+  }
+
+  var dFlushing = false;
+
+  function dFlush(quiet) {
+    if (dFlushing) return Promise.resolve();
+    var q = readDQueue();
+    if (!q.length) { renderDQueue(); return Promise.resolve(); }
+    if (!get(LS.token, "")) {
+      if (!quiet) status($("diaryStatus"), "Токен не задан, записи ждут в очереди.", "warn");
+      return Promise.resolve();
+    }
+    dFlushing = true;
+    var sent = 0;
+    function step() {
+      var rest = readDQueue();
+      if (!rest.length) return Promise.resolve();
+      return diaryAppend(rest[0]).then(function () {
+        writeDQueue(readDQueue().filter(function (x) { return x.id !== rest[0].id; }));
+        sent++;
+        renderDQueue();
+        return step();
+      });
+    }
+    return step().then(function () {
+      dFlushing = false;
+      renderDQueue();
+      if (sent) {
+        status($("diaryStatus"), sent === 1 ? "Записано." : "Записей: " + sent, "ok");
+        loadDiary(mskParts().date.slice(0, 7), true);
+      }
+    }).catch(function (err) {
+      dFlushing = false;
+      renderDQueue();
+      var left = readDQueue().length;
+      var tail = left ? " Записей в очереди: " + left + "." : "";
+      status($("diaryStatus"), (err.kind === "network" ? "Нет сети." : err.message) + tail,
+        err.kind === "network" ? "warn" : "err");
+    });
+  }
+
+  function dSubmit() {
+    var ta = $("dEntry");
+    var text = ta.value.trim();
+    if (!text) { ta.focus(); return; }
+    var now = mskParts();
+    var q = readDQueue();
+    q.push({
+      id: "d" + Date.now() + Math.random().toString(16).slice(2, 8),
+      date: now.date, time: now.time, text: text
+    });
+    writeDQueue(q);
+    ta.value = "";
+    ta.focus();
+    renderDQueue();
+    status($("diaryStatus"), "Записываю...", "");
+    dFlush(false);
+  }
+
+  function renderDiary(entries, month) {
+    var body = $("dBody");
+    body.textContent = "";
+    if (!entries.length) {
+      body.appendChild(el("div", "empty", "За этот месяц записей нет."));
+      return;
+    }
+    entries.slice().reverse().forEach(function (e) {
+      var div = el("div", "entry");
+      var t = document.createElement("time");
+      t.textContent = e.date + (e.time ? ", " + e.time : "");
+      div.appendChild(t);
+      div.appendChild(document.createTextNode(e.text));
+      body.appendChild(div);
+    });
+  }
+
+  function renderMonths(months, current) {
+    var sel = $("dMonth");
+    sel.textContent = "";
+    months.forEach(function (m) {
+      var o = document.createElement("option");
+      o.value = m;
+      o.textContent = m;
+      if (m === current) o.selected = true;
+      sel.appendChild(o);
+    });
+    sel.hidden = months.length < 2;
+  }
+
+  function loadMonths() {
+    var owner = get(LS.owner, "").trim();
+    return api("/repos/" + owner + "/" + REPO_DIARY + "/contents/journal")
+      .then(function (r) {
+        return (r.data || []).filter(function (f) {
+          return f.type === "file" && /^\d{4}-\d{2}\.md$/.test(f.name);
+        }).map(function (f) { return f.name.slice(0, 7); }).sort();
+      })
+      .catch(function (err) { if (err.status === 404) return []; throw err; });
+  }
+
+  function loadDiary(month, quiet) {
+    if (!get(LS.token, "")) return Promise.resolve();
+    var want = month || diaryShown || mskParts().date.slice(0, 7);
+    if (!quiet) status($("diaryStatus"), "Читаю...", "");
+    return loadMonths().then(function (months) {
+      var now = mskParts().date.slice(0, 7);
+      if (months.indexOf(now) === -1) months.push(now);
+      months.sort();
+      diaryMonths = months;
+      if (months.indexOf(want) === -1) want = months[months.length - 1];
+      diaryShown = want;
+      renderMonths(months, want);
+      return getFile(REPO_DIARY, diaryPath(want))
+        .catch(function (err) { if (err.status === 404) return { text: "" }; throw err; });
+    }).then(function (f) {
+      renderDiary(parseDiary(f.text), diaryShown);
+      if (!quiet) status($("diaryStatus"), "", "");
+    }).catch(function (err) {
+      if (!quiet) status($("diaryStatus"), err.message, "err");
+    });
+  }
+
+  // Выгрузка склеивает все месяцы в один файл: дневник не должен зависеть
+  // ни от этого приложения, ни от GitHub.
+  function dExport() {
+    status($("diaryStatus"), "Собираю...", "");
+    return loadMonths().then(function (months) {
+      if (!months.length) { status($("diaryStatus"), "Выгружать пока нечего.", "warn"); return null; }
+      return Promise.all(months.map(function (m) {
+        return getFile(REPO_DIARY, diaryPath(m)).then(function (f) { return f.text.trim(); })
+          .catch(function () { return ""; });
+      })).then(function (parts) {
+        return parts.filter(Boolean).join("\n\n");
+      });
+    }).then(function (text) {
+      if (text === null) return;
+      var blob = new Blob([text + "\n"], { type: "text/markdown;charset=utf-8" });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement("a");
+      a.href = url;
+      a.download = "дневник-" + mskParts().date + ".md";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
+      status($("diaryStatus"), "Файл сохранён.", "ok");
+    }).catch(function (err) {
+      status($("diaryStatus"), err.message, "err");
     });
   }
 
@@ -1426,8 +1718,8 @@
 
   /* ---------- вкладки ---------- */
 
-  var TITLES = { inbox: 'Инбокс', plan: 'План', all: 'Все задачи', stale: 'Зависшее', food: 'Еда', settings: 'Настройки' };
-  var TABS = ['inbox', 'plan', 'all', 'stale', 'food', 'settings'];
+  var TITLES = { inbox: 'Инбокс', plan: 'План', all: 'Все задачи', stale: 'Зависшее', food: 'Еда', diary: 'Дневник', settings: 'Настройки' };
+  var TABS = ['inbox', 'plan', 'all', 'stale', 'food', 'diary', 'settings'];
 
   function showTab(name) {
     TABS.forEach(function (t) {
@@ -1442,7 +1734,8 @@
     if (name === 'all') loadAll(false);
     if (name === 'stale') loadStale(false);
     if (name === 'food') loadFood(false);
-    if (name === 'settings') loadState();
+    if (name === 'diary') { renderDQueue(); dFlush(true); loadDiary(null, false); }
+    if (name === 'settings') { loadState(); loadSettings(); }
   }
 
   /* ---------- запуск ---------- */
@@ -1454,6 +1747,13 @@
   $('allReload').addEventListener('click', function () { loadAll(false); });
   $('staleReload').addEventListener('click', function () { loadStale(false); });
   $('foodReload').addEventListener('click', function () { loadFood(false); });
+  $('dSend').addEventListener('click', dSubmit);
+  $('dRetry').addEventListener('click', function () { dFlush(false); });
+  $('dReload').addEventListener('click', function () { loadDiary(null, false); });
+  $('dExport').addEventListener('click', dExport);
+  $('dMonth').addEventListener('change', function () { loadDiary(this.value, false); });
+  $('autoMorning').addEventListener('change', saveSettings);
+  $('autoEvening').addEventListener('change', saveSettings);
   $('gear').addEventListener('click', function () { showTab('settings'); });
   $('segShop').addEventListener('click', function () { showFoodPane('shop'); });
   $('segRec').addEventListener('click', function () { showFoodPane('rec'); });
@@ -1494,9 +1794,9 @@
     if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); submit(); }
   });
 
-  window.addEventListener('online', function () { flush(true); });
+  window.addEventListener('online', function () { flush(true); dFlush(true); });
   document.addEventListener('visibilitychange', function () {
-    if (document.visibilityState === 'visible') flush(true);
+    if (document.visibilityState === 'visible') { flush(true); dFlush(true); }
   });
 
   if (!get(LS.owner, '')) set(LS.owner, DEFAULT_OWNER);
@@ -1510,6 +1810,7 @@
   } else {
     showTab('inbox');
     flush(true);
+    dFlush(true);
   }
 })();
 </script>
