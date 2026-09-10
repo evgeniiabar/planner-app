@@ -114,6 +114,20 @@
   .noterow time { margin: 0; flex: 0 0 auto; }
   .topicpick { flex: 1; min-width: 0; min-height: 36px; padding: 4px 8px; font-size: 13px; }
   #nTopicList .task input { min-height: 40px; }
+  .picked { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+  .picked figure { position: relative; margin: 0; }
+  .picked img { width: 72px; height: 72px; object-fit: cover; border-radius: 10px; display: block; }
+  .picked button {
+    position: absolute; top: -6px; right: -6px;
+    width: 24px; height: 24px; min-height: 24px; padding: 0;
+    border-radius: 50%; font-size: 13px; line-height: 1;
+    background: var(--panel-2); border: 1px solid var(--line);
+  }
+  .shots { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+  .shots img {
+    max-width: 100%; width: 180px; border-radius: 10px; display: block;
+    background: var(--panel-2); min-height: 90px;
+  }
   .entry time { display: block; font-size: 12px; color: var(--dim); margin-bottom: 6px; }
   select {
     font: inherit;
@@ -376,7 +390,12 @@
 
   <section class="view" id="view-diary" hidden>
     <textarea id="dEntry" placeholder="Своими словами. Это никуда не разбирается и никем не переписывается."></textarea>
-    <button class="primary" id="dSend">Записать</button>
+    <div id="dPicked" class="picked" hidden></div>
+    <div class="row" style="margin-top:10px">
+      <button id="dPhoto">Фото</button>
+      <button class="primary" id="dSend" style="flex:1">Записать</button>
+    </div>
+    <input type="file" id="dFile" accept="image/*" multiple hidden>
     <div class="status" id="diaryStatus"></div>
 
     <div class="card" id="dQueueCard" hidden>
@@ -391,6 +410,7 @@
       <button id="dReload">Обновить</button>
       <button id="dExport">Выгрузить</button>
     </div>
+    <div class="hint">Выгрузка собирает весь текст в один файл. Снимки в него не влезут: дневник целиком, вместе с ними, скачивается с GitHub кнопкой Code → Download ZIP.</div>
     <div id="dBody"></div>
   </section>
 
@@ -1603,6 +1623,83 @@
     });
   }
 
+  /* ---------- фотографии ---------- */
+
+  // Телефонное фото это 3-4 МБ, а репозиторий хранит каждую версию файла
+  // навсегда. Уменьшаем до 2048px: текст на снятом документе ещё читается,
+  // а год дневника весит около сотни мегабайт, а не гигабайт.
+  var PHOTO_SIDE = 2048;
+  var PHOTO_QUALITY = 0.85;
+
+  function shrinkPhoto(file) {
+    return new Promise(function (ok, fail) {
+      var url = URL.createObjectURL(file);
+      var img = new Image();
+      img.onload = function () {
+        var w = img.naturalWidth, h = img.naturalHeight;
+        var k = Math.min(1, PHOTO_SIDE / Math.max(w, h));
+        var c = document.createElement("canvas");
+        c.width = Math.max(1, Math.round(w * k));
+        c.height = Math.max(1, Math.round(h * k));
+        c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+        URL.revokeObjectURL(url);
+        var data = c.toDataURL("image/jpeg", PHOTO_QUALITY);
+        var comma = data.indexOf(",");
+        ok({ b64: data.slice(comma + 1), url: data });
+      };
+      img.onerror = function () {
+        URL.revokeObjectURL(url);
+        fail(new ApiError("Не удалось прочитать снимок.", 0, "photo"));
+      };
+      img.src = url;
+    });
+  }
+
+  function putBinary(repo, path, content, message) {
+    var owner = get(LS.owner, "").trim();
+    return api("/repos/" + owner + "/" + repo + "/contents/" + path,
+      { method: "PUT", body: { message: message, content: content } });
+  }
+
+  function getBinary(repo, path) {
+    var owner = get(LS.owner, "").trim();
+    return api("/repos/" + owner + "/" + repo + "/contents/" + path).then(function (r) {
+      var c = (r.data && r.data.content) || "";
+      return c.replace(/\s+/g, "");
+    });
+  }
+
+  // Снимки в очереди не влезут в localStorage, поэтому лежат в IndexedDB.
+  var DB_NAME = "planner";
+  var DB_STORE = "photos";
+
+  function idb() {
+    return new Promise(function (ok, fail) {
+      if (!window.indexedDB) { fail(new Error("нет IndexedDB")); return; }
+      var r = indexedDB.open(DB_NAME, 1);
+      r.onupgradeneeded = function () {
+        if (!r.result.objectStoreNames.contains(DB_STORE)) r.result.createObjectStore(DB_STORE);
+      };
+      r.onsuccess = function () { ok(r.result); };
+      r.onerror = function () { fail(r.error || new Error("IndexedDB недоступна")); };
+    });
+  }
+
+  function idbDo(mode, run) {
+    return idb().then(function (db) {
+      return new Promise(function (ok, fail) {
+        var tx = db.transaction(DB_STORE, mode);
+        var req = run(tx.objectStore(DB_STORE));
+        tx.oncomplete = function () { ok(req ? req.result : null); };
+        tx.onerror = function () { fail(tx.error); };
+      });
+    });
+  }
+
+  function photoPut(key, b64) { return idbDo("readwrite", function (st) { return st.put(b64, key); }); }
+  function photoGet(key) { return idbDo("readonly", function (st) { return st.get(key); }); }
+  function photoDel(key) { return idbDo("readwrite", function (st) { return st.delete(key); }); }
+
   /* ---------- заметки ---------- */
 
   // Темами распоряжается только человек. Вечерний прогон кладёт заметку в
@@ -1854,18 +1951,62 @@
       if (cur) cur.lines.push(line);
     });
     return out.map(function (e) {
-      return { date: e.date, time: e.time, text: e.lines.join("\n").trim() };
-    }).filter(function (e) { return e.text; });
+      var shots = [];
+      var rest = [];
+      e.lines.forEach(function (line) {
+        var m = /^!\[[^\]]*\]\(([^)]+)\)\s*$/.exec(line);
+        if (m) shots.push(m[1]);
+        else rest.push(line);
+      });
+      return { date: e.date, time: e.time, text: rest.join("\n").trim(), shots: shots };
+    }).filter(function (e) { return e.text || e.shots.length; });
   }
 
-  function entryBlock(item) {
-    return "## " + item.date + " " + item.time + "\n\n" + item.text.trim() + "\n";
+  function entryBlock(item, shots) {
+    var out = "## " + item.date + " " + item.time + "\n\n";
+    if (item.text.trim()) out += item.text.trim() + "\n";
+    (shots || []).forEach(function (name) {
+      out += "![](media/" + name + ")\n";
+    });
+    return out;
+  }
+
+  function photoName(item, i) {
+    return item.date + "-" + item.time.replace(":", "-") + "-" + item.id.slice(1, 7) + "-" + (i + 1) + ".jpg";
   }
 
   // Повторная отправка после потерянного ответа не должна удваивать запись.
-  function diaryAppend(item) {
+  // Снимки уходят первыми: если оборвётся на середине, в дневнике не появится
+  // записи с битой картинкой, а неприкаянный файл ничего не ломает.
+  function sendPhotos(item) {
+    var names = [];
+    function step(i) {
+      if (i >= (item.photos || 0)) return Promise.resolve(names);
+      var name = photoName(item, i);
+      return photoGet(item.id + ":" + i).then(function (b64) {
+        if (!b64) return null;
+        return putBinary(REPO_DIARY, "journal/media/" + name, b64, "дневник: снимок " + name)
+          .catch(function (err) {
+            if (err.kind === "conflict") return null;
+            throw err;
+          });
+      }).then(function () {
+        names.push(name);
+        return step(i + 1);
+      });
+    }
+    return step(0);
+  }
+
+  function forgetPhotos(item) {
+    var jobs = [];
+    for (var i = 0; i < (item.photos || 0); i++) jobs.push(photoDel(item.id + ":" + i));
+    return Promise.all(jobs).catch(function () { return null; });
+  }
+
+  function diaryAppend(item, shots) {
     var month = item.date.slice(0, 7);
-    var block = entryBlock(item);
+    var block = entryBlock(item, shots);
     return updateFile(REPO_DIARY, diaryPath(month), function (text) {
       var out = text || ("# " + month + "\n");
       if (out.indexOf(block) > -1) return null;
@@ -1884,8 +2025,10 @@
       var t = document.createElement("time");
       t.textContent = item.date + " " + item.time;
       div.appendChild(t);
+      var line = item.text || "(без текста)";
+      if (item.photos) line += " [снимков: " + item.photos + "]";
       div.appendChild(document.createTextNode(
-        item.text.length > 160 ? item.text.slice(0, 160) + "..." : item.text
+        line.length > 160 ? line.slice(0, 160) + "..." : line
       ));
       list.appendChild(div);
     });
@@ -1906,12 +2049,15 @@
     function step() {
       var rest = readDQueue();
       if (!rest.length) return Promise.resolve();
-      return diaryAppend(rest[0]).then(function () {
-        writeDQueue(readDQueue().filter(function (x) { return x.id !== rest[0].id; }));
+      var item = rest[0];
+      return sendPhotos(item).then(function (shots) {
+        return diaryAppend(item, shots);
+      }).then(function () {
+        writeDQueue(readDQueue().filter(function (x) { return x.id !== item.id; }));
         sent++;
         renderDQueue();
-        return step();
-      });
+        return forgetPhotos(item);
+      }).then(function () { return step(); });
     }
     return step().then(function () {
       dFlushing = false;
@@ -1930,22 +2076,123 @@
     });
   }
 
+  var picked = [];
+
+  function renderPicked() {
+    var box = $("dPicked");
+    box.textContent = "";
+    box.hidden = picked.length === 0;
+    picked.forEach(function (shot, i) {
+      var fig = document.createElement("figure");
+      var img = document.createElement("img");
+      img.src = shot.url;
+      img.alt = "выбранный снимок";
+      fig.appendChild(img);
+      var x = el("button", null, "✕");
+      x.setAttribute("aria-label", "Убрать снимок");
+      x.addEventListener("click", function () {
+        picked.splice(i, 1);
+        renderPicked();
+      });
+      fig.appendChild(x);
+      box.appendChild(fig);
+    });
+  }
+
+  function pickPhotos(files) {
+    var list = Array.prototype.slice.call(files || []);
+    if (!list.length) return;
+    status($("diaryStatus"), "Готовлю снимки...", "");
+    var jobs = list.map(function (f) { return shrinkPhoto(f); });
+    Promise.all(jobs).then(function (shots) {
+      picked = picked.concat(shots);
+      renderPicked();
+      status($("diaryStatus"), "", "");
+    }).catch(function (err) {
+      status($("diaryStatus"), err.message, "err");
+    });
+  }
+
   function dSubmit() {
     var ta = $("dEntry");
     var text = ta.value.trim();
-    if (!text) { ta.focus(); return; }
+    if (!text && !picked.length) { ta.focus(); return; }
     var now = mskParts();
-    var q = readDQueue();
-    q.push({
-      id: "d" + Date.now() + Math.random().toString(16).slice(2, 8),
-      date: now.date, time: now.time, text: text
-    });
-    writeDQueue(q);
+    var id = "d" + Date.now() + Math.random().toString(16).slice(2, 8);
+    var shots = picked;
+    picked = [];
     ta.value = "";
-    ta.focus();
-    renderDQueue();
+    renderPicked();
     status($("diaryStatus"), "Записываю...", "");
-    dFlush(false);
+
+    var stash = shots.map(function (shot, i) { return photoPut(id + ":" + i, shot.b64); });
+    Promise.all(stash).then(function () {
+      var q = readDQueue();
+      q.push({ id: id, date: now.date, time: now.time, text: text, photos: shots.length });
+      writeDQueue(q);
+      renderDQueue();
+      return dFlush(false);
+    }).catch(function (err) {
+      // снимки некуда сложить: запись не теряем, но и обещать её не можем
+      picked = shots;
+      ta.value = text;
+      renderPicked();
+      status($("diaryStatus"), "Снимки не сохранились: " + err.message, "err");
+    });
+  }
+
+  // Снимки тянем не все разом, а когда до них долистали: месяц фотографий
+  // это десяток мегабайт, а телефон часто на мобильном интернете.
+  var shotSeen = null;
+
+  function loadShot(img) {
+    var path = img.dataset.path;
+    if (!path || img.dataset.done) return;
+    img.dataset.done = "1";
+    getBinary(REPO_DIARY, path).then(function (b64) {
+      img.src = "data:image/jpeg;base64," + b64;
+    }).catch(function () {
+      img.alt = "снимок не открылся";
+      img.style.minHeight = "0";
+    });
+  }
+
+  function watchShot(img) {
+    if (!window.IntersectionObserver) { loadShot(img); return; }
+    if (!shotSeen) {
+      shotSeen = new IntersectionObserver(function (rows) {
+        rows.forEach(function (row) {
+          if (!row.isIntersecting) return;
+          shotSeen.unobserve(row.target);
+          loadShot(row.target);
+        });
+      }, { rootMargin: "300px" });
+    }
+    shotSeen.observe(img);
+  }
+
+  // Наблюдатель молчит, пока вкладка в фоне, и может не сработать в старом
+  // браузере. Один проход по видимому после отрисовки: иначе снимки просто
+  // не появятся, и понять почему будет невозможно.
+  function kickVisibleShots() {
+    var edge = (window.innerHeight || 800) + 300;
+    Array.prototype.forEach.call(document.querySelectorAll("#dBody .shots img"), function (img) {
+      if (img.dataset.done) return;
+      var box = img.getBoundingClientRect();
+      if (box.bottom > -300 && box.top < edge) loadShot(img);
+    });
+  }
+
+  function shotsBlock(shots) {
+    var box = el("div", "shots");
+    shots.forEach(function (name) {
+      var img = document.createElement("img");
+      img.alt = "снимок из дневника";
+      img.dataset.path = name.indexOf("media/") === 0 ? "journal/" + name : name;
+      box.appendChild(img);
+      watchShot(img);
+    });
+    return box;
   }
 
   function renderDiary(entries, month) {
@@ -1955,12 +2202,14 @@
       body.appendChild(el("div", "empty", "За этот месяц записей нет."));
       return;
     }
+    setTimeout(kickVisibleShots, 0);
     entries.slice().reverse().forEach(function (e) {
       var div = el("div", "entry");
       var t = document.createElement("time");
       t.textContent = e.date + (e.time ? ", " + e.time : "");
       div.appendChild(t);
-      div.appendChild(document.createTextNode(e.text));
+      if (e.text) div.appendChild(document.createTextNode(e.text));
+      if (e.shots && e.shots.length) div.appendChild(shotsBlock(e.shots));
       body.appendChild(div);
     });
   }
@@ -2183,6 +2432,11 @@
   $('staleReload').addEventListener('click', function () { loadStale(false); });
   $('foodReload').addEventListener('click', function () { loadFood(false); });
   $('dSend').addEventListener('click', dSubmit);
+  $('dPhoto').addEventListener('click', function () { $('dFile').click(); });
+  $('dFile').addEventListener('change', function () {
+    pickPhotos(this.files);
+    this.value = '';
+  });
   $('dRetry').addEventListener('click', function () { dFlush(false); });
   $('dReload').addEventListener('click', function () { loadDiary(null, false); });
   $('dExport').addEventListener('click', dExport);
