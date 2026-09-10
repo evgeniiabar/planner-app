@@ -412,7 +412,7 @@
         <button id="nTopicAdd">Завести тему</button>
         <button id="nReload">Обновить</button>
       </div>
-      <div class="hint">Темами распоряжаетесь только вы. Вечерний прогон кладёт заметки в готовые темы, а если не понял куда, то в «Разное».</div>
+      <div class="hint">Темами распоряжаетесь только вы. Вечерний прогон кладёт заметки только в готовые темы, а если не понял куда, то в запасную. Названия любые, хоть английские.</div>
     </div>
   </section>
 
@@ -1608,7 +1608,6 @@
   // Темами распоряжается только человек. Вечерний прогон кладёт заметку в
   // готовую тему, а если не понял в какую, то в «Разное».
   var NOTES_PATH = "notes.json";
-  var MISC = "Разное";
   var notesCache = null;
 
   function newNoteId(prefix, taken) {
@@ -1622,9 +1621,11 @@
     return String(a).trim().toLowerCase() === String(b).trim().toLowerCase();
   }
 
+  // Запасная тема помечена флагом, а не названием: её можно переименовать хоть
+  // на английский, и она останется той, куда падает всё непонятое.
   function miscTopic(topics) {
     for (var i = 0; i < topics.length; i++) {
-      if (sameName(topics[i].name, MISC)) return topics[i];
+      if (topics[i].fallback) return topics[i];
     }
     return topics[0] || null;
   }
@@ -1701,12 +1702,15 @@
     }, "тема переименована: " + name);
   }
 
-  // Тему удаляем, заметки из неё нет: они переезжают в «Разное».
+  // Тему удаляем, заметки из неё нет: они переезжают в запасную. Саму запасную
+  // удалить нельзя, иначе непонятым заметкам будет некуда падать.
   function removeTopic(id) {
     return saveNotes(function (data) {
+      var gone = data.topics.filter(function (t) { return t.id === id; })[0];
+      if (!gone || gone.fallback) return false;
       var rest = data.topics.filter(function (t) { return t.id !== id; });
-      if (rest.length === data.topics.length || !rest.length) return false;
       var to = miscTopic(rest);
+      if (!to) return false;
       data.items.forEach(function (n) { if (n.topic_id === id) n.topic_id = to.id; });
       data.topics = rest;
     }, "тема удалена");
@@ -1763,13 +1767,20 @@
       });
       body.appendChild(input);
       row.appendChild(body);
-      var x = el("button", "rowbtn", "✕");
-      x.setAttribute("aria-label", "Удалить тему");
-      x.addEventListener("click", function () {
-        if (!confirm("Удалить тему «" + t.name + "»? Заметки из неё переедут в «" + MISC + "».")) return;
-        removeTopic(t.id);
-      });
-      row.appendChild(x);
+      if (t.fallback) {
+        var mark = el("span", "tag", "запасная");
+        mark.title = "Сюда попадает всё, что вечерний прогон не смог разложить";
+        row.appendChild(mark);
+      } else {
+        var x = el("button", "rowbtn", "✕");
+        x.setAttribute("aria-label", "Удалить тему");
+        x.addEventListener("click", function () {
+          var to = miscTopic((notesCache && notesCache.topics) || []);
+          if (!confirm("Удалить тему «" + t.name + "»? Заметки из неё переедут в «" + (to ? to.name : "запасную") + "».")) return;
+          removeTopic(t.id);
+        });
+        row.appendChild(x);
+      }
       box.appendChild(row);
     });
   }
