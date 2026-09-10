@@ -110,6 +110,10 @@
     word-break: break-word;
     line-height: 1.45;
   }
+  .noterow { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+  .noterow time { margin: 0; flex: 0 0 auto; }
+  .topicpick { flex: 1; min-width: 0; min-height: 36px; padding: 4px 8px; font-size: 13px; }
+  #nTopicList .task input { min-height: 40px; }
   .entry time { display: block; font-size: 12px; color: var(--dim); margin-bottom: 6px; }
   select {
     font: inherit;
@@ -156,6 +160,19 @@
     word-break: break-word;
   }
   .queue-item:first-of-type { border-top: 0; }
+  .rowbtn {
+    border: 0;
+    background: transparent;
+    color: var(--dim);
+    font-size: 18px;
+    line-height: 1;
+    min-height: 44px;
+    min-width: 44px;
+    padding: 0;
+    flex: 0 0 auto;
+  }
+  .queue-item.withbtn { display: flex; align-items: flex-start; gap: 10px; }
+  .queue-item .qtext { flex: 1; min-width: 0; }
   .queue-item time { display: block; font-size: 12px; color: #6f7688; margin-bottom: 3px; }
   .hint { font-size: 13px; color: var(--dim); margin-top: 8px; }
   .kv { display: flex; justify-content: space-between; gap: 12px; font-size: 14px; padding: 5px 0; }
@@ -251,9 +268,10 @@
     background: transparent;
     color: var(--dim);
     border-radius: 0;
-    font-size: 12px;
+    font-size: 11px;
     min-height: 56px;
-    padding: 0 2px;
+    padding: 0 1px;
+    min-width: 0;
   }
   nav button[aria-selected="true"] { color: var(--accent); box-shadow: inset 0 2px 0 var(--accent); }
 </style>
@@ -296,6 +314,20 @@
 
   <section class="view" id="view-plan" hidden>
     <div id="planBody"></div>
+
+    <div class="card" id="planAddCard">
+      <h2>Добавить в план</h2>
+      <input type="text" id="planNew" placeholder="что сделать сегодня" autocomplete="off">
+      <div class="row" style="margin-top:10px">
+        <select id="planBlock" aria-label="Когда">
+          <option value="morning">Утро</option>
+          <option value="afternoon" selected>День</option>
+          <option value="evening">Вечер</option>
+        </select>
+        <button id="planAdd">Добавить</button>
+      </div>
+      <div class="hint">Задача попадёт в сегодняшний план и в общий список. Через ИИ не проходит.</div>
+    </div>
     <div class="status" id="planStatus"></div>
     <div class="row" style="margin-top:16px"><button id="planReload">Обновить</button></div>
   </section>
@@ -362,6 +394,28 @@
     <div id="dBody"></div>
   </section>
 
+  <section class="view" id="view-notes" hidden>
+    <textarea id="nEntry" placeholder="Что важно не забыть"></textarea>
+    <div class="row" style="margin-top:10px">
+      <select id="nTopic" aria-label="Тема"></select>
+      <button class="primary" id="nSend" style="flex:1">Записать</button>
+    </div>
+    <div class="status" id="notesStatus"></div>
+
+    <div id="nBody"></div>
+
+    <div class="card">
+      <h2>Темы</h2>
+      <div id="nTopicList"></div>
+      <input type="text" id="nTopicNew" placeholder="новая тема" autocomplete="off" style="margin-top:10px">
+      <div class="row" style="margin-top:10px">
+        <button id="nTopicAdd">Завести тему</button>
+        <button id="nReload">Обновить</button>
+      </div>
+      <div class="hint">Темами распоряжаетесь только вы. Вечерний прогон кладёт заметки в готовые темы, а если не понял куда, то в «Разное».</div>
+    </div>
+  </section>
+
   <section class="view" id="view-settings" hidden>
     <label for="owner">Владелец на GitHub</label>
     <input type="text" id="owner" placeholder="например barakshina" autocomplete="off" autocapitalize="none" spellcheck="false">
@@ -414,9 +468,10 @@
   <button data-tab="inbox" aria-selected="true">Инбокс</button>
   <button data-tab="plan" aria-selected="false">План</button>
   <button data-tab="all" aria-selected="false">Всё</button>
-  <button data-tab="stale" aria-selected="false">Зависшее</button>
+  <button data-tab="stale" aria-selected="false">Зависло</button>
   <button data-tab="food" aria-selected="false">Еда</button>
   <button data-tab="diary" aria-selected="false">Дневник</button>
+  <button data-tab="notes" aria-selected="false">Заметки</button>
 </nav>
 
 <script>
@@ -682,6 +737,12 @@
     });
   }
 
+  function deleteFile(repo, path, sha, message) {
+    var owner = get(LS.owner, '').trim();
+    return api('/repos/' + owner + '/' + repo + '/contents/' + path,
+      { method: 'DELETE', body: { message: message, sha: sha } });
+  }
+
   function updateJson(repo, path, mutate, message) {
     return updateFile(repo, path, function (text) {
       var next = mutate(JSON.parse(text || '{}'));
@@ -835,6 +896,59 @@
     });
   }
 
+  function newTaskId(taken) {
+    for (;;) {
+      var id = "tsk_" + Math.random().toString(16).slice(2, 8);
+      if (taken.indexOf(id) === -1) return id;
+    }
+  }
+
+  // Своя задача не проходит через модель, поэтому пишется сразу в два места:
+  // в backlog, иначе вечерний прогон её не найдёт и она пропадёт вместе с планом,
+  // и в сегодняшний план, ради чего всё и затевалось.
+  function addPlanTask(title, block) {
+    var today = mskToday();
+    var made = null;
+    status($("planStatus"), "Добавляю...", "");
+    return updateJson(REPO_DATA, "backlog.json", function (backlog) {
+      var tasks = backlog.tasks || (backlog.tasks = []);
+      var id = newTaskId(tasks.map(function (t) { return t.id; }));
+      made = {
+        id: id, title: title, due: null, est_min: null, source: null,
+        first_seen: today, carry_count: 0, last_carry_date: null,
+        last_planned_date: today, status: "open", done_at: null
+      };
+      tasks.push(made);
+      return backlog;
+    }, "задача вручную: " + title).then(function () {
+      return updateJson(REPO_DATA, "plans/" + today + ".json", function (plan) {
+        if (!plan.date) {
+          plan.date = today;
+          plan.generated_at = new Date().toISOString().replace(/\.\d+Z$/, "Z");
+          plan.focus = plan.focus || null;
+          plan.events = plan.events || [];
+          plan.upcoming = plan.upcoming || [];
+          plan.evening_note = plan.evening_note || null;
+        }
+        plan.tasks = plan.tasks || [];
+        plan.tasks.push({
+          id: made.id, title: made.title, due: null, block: block,
+          est_min: null, first_seen: today, carry_count: 0,
+          status: "todo", done_at: null
+        });
+        return plan;
+      }, "план: своя задача");
+    }).then(function (plan) {
+      planCache = plan;
+      renderPlan(plan);
+      status($("planStatus"), "Добавлено.", "ok");
+      loadAll(true);
+    }).catch(function (err) {
+      status($("planStatus"), err.message, "err");
+      loadPlan(true);
+    });
+  }
+
   function loadPlan(quiet) {
     if (!quiet) status($('planStatus'), 'Загружаю...', '');
     return getJson(REPO_DATA, 'plans/' + mskToday() + '.json').then(function (f) {
@@ -870,6 +984,14 @@
     body.appendChild(meta);
 
     row.appendChild(body);
+
+    var x = el('button', 'rowbtn', '✕');
+    x.setAttribute('aria-label', 'Снять задачу');
+    x.addEventListener('click', function () {
+      if (!confirm('Снять задачу «' + t.title + '»?')) return;
+      dropTask(t.id, t.title);
+    });
+    row.appendChild(x);
     return row;
   }
 
@@ -915,6 +1037,41 @@
     var b = Date.parse(to + 'T00:00:00Z');
     if (isNaN(a) || isNaN(b)) return 0;
     return Math.round((b - a) / 86400000);
+  }
+
+  // Задача не стирается: у неё меняется статус, запись остаётся в backlog.
+  // Из сегодняшнего плана она при этом уходит, иначе так и будет мозолить глаза.
+  function dropTask(id, title) {
+    status($("allStatus"), "Убираю...", "");
+    return updateJson(REPO_DATA, "backlog.json", function (backlog) {
+      var hit = false;
+      (backlog.tasks || []).forEach(function (t) {
+        if (t.id !== id) return;
+        hit = true;
+        t.status = "dropped";
+        t.done_at = new Date().toISOString();
+      });
+      return hit ? backlog : null;
+    }, "задача снята: " + title).then(function () {
+      return updateJson(REPO_DATA, "plans/" + mskToday() + ".json", function (plan) {
+        var rest = (plan.tasks || []).filter(function (t) { return t.id !== id; });
+        if (rest.length === (plan.tasks || []).length) return null;
+        plan.tasks = rest;
+        return plan;
+      }, "план: снята " + id).catch(function (err) {
+        if (err.status === 404) return null;
+        throw err;
+      });
+    }).then(function () {
+      loadPlan(true);
+      // сообщение ставим после перерисовки: loadAll затирает строку статуса
+      return loadAll(true).then(function () {
+        status($("allStatus"), "Задача снята.", "ok");
+      });
+    }).catch(function (err) {
+      status($("allStatus"), err.message, "err");
+      loadAll(true);
+    });
   }
 
   function loadAll(quiet) {
@@ -1446,6 +1603,216 @@
     });
   }
 
+  /* ---------- заметки ---------- */
+
+  // Темами распоряжается только человек. Вечерний прогон кладёт заметку в
+  // готовую тему, а если не понял в какую, то в «Разное».
+  var NOTES_PATH = "notes.json";
+  var MISC = "Разное";
+  var notesCache = null;
+
+  function newNoteId(prefix, taken) {
+    for (;;) {
+      var id = prefix + "_" + Math.random().toString(16).slice(2, 8);
+      if (taken.indexOf(id) === -1) return id;
+    }
+  }
+
+  function sameName(a, b) {
+    return String(a).trim().toLowerCase() === String(b).trim().toLowerCase();
+  }
+
+  function miscTopic(topics) {
+    for (var i = 0; i < topics.length; i++) {
+      if (sameName(topics[i].name, MISC)) return topics[i];
+    }
+    return topics[0] || null;
+  }
+
+  function saveNotes(mutate, message) {
+    status($("notesStatus"), "Сохраняю...", "");
+    return updateJson(REPO_DATA, NOTES_PATH, function (data) {
+      data.schema_version = data.schema_version || 1;
+      data.topics = data.topics || [];
+      data.items = data.items || [];
+      return mutate(data) === false ? null : data;
+    }, message).then(function (data) {
+      notesCache = data;
+      renderNotes(data);
+      status($("notesStatus"), "Сохранено.", "ok");
+    }).catch(function (err) {
+      status($("notesStatus"), err.message, "err");
+      loadNotes(true);
+    });
+  }
+
+  function addNote(text, topicId) {
+    return saveNotes(function (data) {
+      if (!data.topics.length) return false;
+      var known = data.topics.filter(function (t) { return t.id === topicId; });
+      var topic = known.length ? known[0] : miscTopic(data.topics);
+      data.items.push({
+        id: newNoteId("not", data.items.map(function (n) { return n.id; })),
+        topic_id: topic.id,
+        text: text,
+        source: null,
+        created_at: new Date().toISOString()
+      });
+    }, "заметка добавлена");
+  }
+
+  function moveNote(id, topicId) {
+    return saveNotes(function (data) {
+      var hit = false;
+      data.items.forEach(function (n) {
+        if (n.id === id) { n.topic_id = topicId; hit = true; }
+      });
+      return hit;
+    }, "заметка переложена");
+  }
+
+  function removeNote(id) {
+    return saveNotes(function (data) {
+      var rest = data.items.filter(function (n) { return n.id !== id; });
+      if (rest.length === data.items.length) return false;
+      data.items = rest;
+    }, "заметка убрана");
+  }
+
+  function addTopic(name) {
+    return saveNotes(function (data) {
+      var dup = data.topics.filter(function (t) { return sameName(t.name, name); });
+      if (dup.length) return false;
+      data.topics.push({
+        id: newNoteId("top", data.topics.map(function (t) { return t.id; })),
+        name: name,
+        created_at: new Date().toISOString()
+      });
+    }, "тема заведена: " + name);
+  }
+
+  function renameTopic(id, name) {
+    return saveNotes(function (data) {
+      var hit = false;
+      data.topics.forEach(function (t) {
+        if (t.id === id && t.name !== name) { t.name = name; hit = true; }
+      });
+      return hit;
+    }, "тема переименована: " + name);
+  }
+
+  // Тему удаляем, заметки из неё нет: они переезжают в «Разное».
+  function removeTopic(id) {
+    return saveNotes(function (data) {
+      var rest = data.topics.filter(function (t) { return t.id !== id; });
+      if (rest.length === data.topics.length || !rest.length) return false;
+      var to = miscTopic(rest);
+      data.items.forEach(function (n) { if (n.topic_id === id) n.topic_id = to.id; });
+      data.topics = rest;
+    }, "тема удалена");
+  }
+
+  function topicOptions(sel, topics, current) {
+    sel.textContent = "";
+    topics.forEach(function (t) {
+      var o = document.createElement("option");
+      o.value = t.id;
+      o.textContent = t.name;
+      if (t.id === current) o.selected = true;
+      sel.appendChild(o);
+    });
+  }
+
+  function noteRow(note, topics) {
+    var row = el("div", "entry");
+    var head = el("div", "noterow");
+    var t = document.createElement("time");
+    t.textContent = (note.created_at || "").slice(0, 10);
+    head.appendChild(t);
+    var pick = document.createElement("select");
+    pick.className = "topicpick";
+    pick.setAttribute("aria-label", "Переложить в другую тему");
+    topicOptions(pick, topics, note.topic_id);
+    pick.addEventListener("change", function () { moveNote(note.id, this.value); });
+    head.appendChild(pick);
+    var x = el("button", "rowbtn", "✕");
+    x.setAttribute("aria-label", "Убрать заметку");
+    x.addEventListener("click", function () {
+      if (!confirm("Убрать заметку?")) return;
+      removeNote(note.id);
+    });
+    head.appendChild(x);
+    row.appendChild(head);
+    row.appendChild(document.createTextNode(note.text));
+    return row;
+  }
+
+  function renderTopicList(topics) {
+    var box = $("nTopicList");
+    box.textContent = "";
+    topics.forEach(function (t) {
+      var row = el("div", "task");
+      var body = el("div", "body");
+      var input = document.createElement("input");
+      input.type = "text";
+      input.value = t.name;
+      input.addEventListener("change", function () {
+        var v = this.value.trim();
+        if (!v) { this.value = t.name; return; }
+        renameTopic(t.id, v);
+      });
+      body.appendChild(input);
+      row.appendChild(body);
+      var x = el("button", "rowbtn", "✕");
+      x.setAttribute("aria-label", "Удалить тему");
+      x.addEventListener("click", function () {
+        if (!confirm("Удалить тему «" + t.name + "»? Заметки из неё переедут в «" + MISC + "».")) return;
+        removeTopic(t.id);
+      });
+      row.appendChild(x);
+      box.appendChild(row);
+    });
+  }
+
+  function renderNotes(data) {
+    var topics = (data && data.topics) || [];
+    var items = (data && data.items) || [];
+    var keep = $("nTopic").value;
+    topicOptions($("nTopic"), topics, keep);
+    renderTopicList(topics);
+
+    var body = $("nBody");
+    body.textContent = "";
+    if (!items.length) {
+      body.appendChild(el("div", "empty", "Заметок пока нет. Пишите сюда или диктуйте в инбокс, вечерний прогон разложит по темам."));
+      return;
+    }
+    topics.forEach(function (topic) {
+      var mine = items.filter(function (n) { return n.topic_id === topic.id; });
+      if (!mine.length) return;
+      body.appendChild(el("div", "block-title", topic.name + " (" + mine.length + ")"));
+      mine.slice().reverse().forEach(function (n) { body.appendChild(noteRow(n, topics)); });
+    });
+  }
+
+  function loadNotes(quiet) {
+    if (!get(LS.token, "")) return Promise.resolve();
+    if (!quiet) status($("notesStatus"), "Загружаю...", "");
+    return getJson(REPO_DATA, NOTES_PATH).then(function (f) {
+      notesCache = f.json;
+      renderNotes(f.json);
+      if (!quiet) status($("notesStatus"), "", "");
+    }).catch(function (err) {
+      if (err.status === 404) {
+        notesCache = { topics: [], items: [] };
+        renderNotes(notesCache);
+        status($("notesStatus"), "Файл заметок ещё не создан.", "warn");
+        return;
+      }
+      status($("notesStatus"), err.message, "err");
+    });
+  }
+
   /* ---------- дневник ---------- */
 
   // Дневник живёт в отдельном репозитории и через разбор не проходит вообще:
@@ -1694,11 +2061,20 @@
     $("pendingTitle").textContent = n ? "Ждут разбора: " + n : "Инбокс разобран";
     $("runEveningInbox").hidden = !n;
     (res && res.items || []).forEach(function (it) {
-      var div = el("div", "queue-item");
+      var div = el("div", "queue-item withbtn");
+      var box = el("div", "qtext");
       var t = document.createElement("time");
       t.textContent = it.when;
-      div.appendChild(t);
-      div.appendChild(document.createTextNode(it.text || "(пусто)"));
+      box.appendChild(t);
+      box.appendChild(document.createTextNode(it.text || "(пусто)"));
+      div.appendChild(box);
+      var x = el("button", "rowbtn", "✕");
+      x.setAttribute("aria-label", "Убрать запись из разбора");
+      x.addEventListener("click", function () {
+        if (!confirm("Убрать эту запись? Разбирать её не будут, текст сохранится.")) return;
+        discardEntry(it.name, it.text);
+      });
+      div.appendChild(x);
       body.appendChild(div);
     });
     if (n > (res.items || []).length) {
@@ -1711,6 +2087,32 @@
     }
     if (n) hint += (hint ? " " : "") + "Сам разбор в 22:00, но можно не ждать.";
     $("pendingHint").textContent = hint;
+  }
+
+  // Надиктованное не стираем никогда: запись переезжает в inbox/discarded/,
+  // из разбора пропадает, но остаётся на случай «а что я там наговорила».
+  function discardEntry(name, text) {
+    var msg = "инбокс: снято " + name;
+    status($("pendingStatus"), "Убираю...", "");
+    return putFile(REPO_DATA, "inbox/discarded/" + name, text, msg)
+      .catch(function (err) {
+        // копия уже лежит там с прошлой попытки, это не повод останавливаться
+        if (err.kind === "conflict") return null;
+        throw err;
+      })
+      .then(function () { return getFile(REPO_DATA, "inbox/" + name); })
+      .then(function (f) { return deleteFile(REPO_DATA, "inbox/" + name, f.sha, msg); })
+      .then(function () {
+        status($("pendingStatus"), "Запись убрана из разбора.", "ok");
+        return loadPending(true);
+      })
+      .catch(function (err) {
+        if (err.status === 404) {
+          status($("pendingStatus"), "Записи уже нет.", "warn");
+          return loadPending(true);
+        }
+        status($("pendingStatus"), err.message, "err");
+      });
   }
 
   var PENDING_SHOWN = 10;
@@ -1726,8 +2128,8 @@
       }).sort(function (a, b) { return a.name < b.name ? 1 : -1; });
       return Promise.all(files.slice(0, PENDING_SHOWN).map(function (f) {
         return getFile(REPO_DATA, "inbox/" + f.name).then(function (x) {
-          return { when: fileWhen(f.name), text: x.text.trim() };
-        }).catch(function () { return { when: fileWhen(f.name), text: "" }; });
+          return { name: f.name, when: fileWhen(f.name), text: x.text.trim() };
+        }).catch(function () { return { name: f.name, when: fileWhen(f.name), text: "" }; });
       })).then(function (items) { return { count: files.length, items: items }; });
     }).then(function (res) {
       renderPending(res);
@@ -1739,8 +2141,8 @@
 
   /* ---------- вкладки ---------- */
 
-  var TITLES = { inbox: 'Инбокс', plan: 'План', all: 'Все задачи', stale: 'Зависшее', food: 'Еда', diary: 'Дневник', settings: 'Настройки' };
-  var TABS = ['inbox', 'plan', 'all', 'stale', 'food', 'diary', 'settings'];
+  var TITLES = { inbox: 'Инбокс', plan: 'План', all: 'Все задачи', stale: 'Зависшее', food: 'Еда', diary: 'Дневник', notes: 'Заметки', settings: 'Настройки' };
+  var TABS = ['inbox', 'plan', 'all', 'stale', 'food', 'diary', 'notes', 'settings'];
 
   function showTab(name) {
     TABS.forEach(function (t) {
@@ -1756,6 +2158,7 @@
     if (name === 'stale') loadStale(false);
     if (name === 'food') loadFood(false);
     if (name === 'diary') { renderDQueue(); dFlush(true); loadDiary(null, false); }
+    if (name === 'notes') loadNotes(false);
     if (name === 'settings') { loadState(); loadSettings(); }
   }
 
@@ -1773,6 +2176,28 @@
   $('dReload').addEventListener('click', function () { loadDiary(null, false); });
   $('dExport').addEventListener('click', dExport);
   $('dMonth').addEventListener('change', function () { loadDiary(this.value, false); });
+  $('nSend').addEventListener('click', function () {
+    var ta = $('nEntry');
+    var v = ta.value.trim();
+    if (!v) { ta.focus(); return; }
+    ta.value = '';
+    addNote(v, $('nTopic').value);
+  });
+  $('nTopicAdd').addEventListener('click', function () {
+    var i = $('nTopicNew');
+    var v = i.value.trim();
+    if (!v) { i.focus(); return; }
+    i.value = '';
+    addTopic(v);
+  });
+  $('nReload').addEventListener('click', function () { loadNotes(false); });
+  $('planAdd').addEventListener('click', function () {
+    var i = $('planNew');
+    var v = i.value.trim();
+    if (!v) { i.focus(); return; }
+    i.value = '';
+    addPlanTask(v, $('planBlock').value);
+  });
   $('autoMorning').addEventListener('change', saveSettings);
   $('autoEvening').addEventListener('change', saveSettings);
   $('gear').addEventListener('click', function () { showTab('settings'); });
@@ -1808,6 +2233,14 @@
 
   Array.prototype.forEach.call(document.querySelectorAll('nav button'), function (b) {
     b.addEventListener('click', function () { showTab(b.dataset.tab); });
+  });
+
+  ['planNew', 'nTopicNew'].forEach(function (id) {
+    $(id).addEventListener('keydown', function (e) {
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+      $(id === 'planNew' ? 'planAdd' : 'nTopicAdd').click();
+    });
   });
 
   // Ctrl+Enter отправляет с физической клавиатуры
