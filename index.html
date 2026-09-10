@@ -380,6 +380,7 @@
       <div class="kv"><span>Истекает</span><span id="kvExp">-</span></div>
       <div class="kv"><span>planner-data</span><span id="kvData">-</span></div>
       <div class="kv"><span>diary</span><span id="kvDiary">-</span></div>
+      <div class="kv"><span>Запуск прогонов</span><span id="kvActions">-</span></div>
     </div>
 
     <div class="card">
@@ -393,7 +394,7 @@
       <label class="check"><input type="checkbox" id="autoMorning"> Утро по расписанию, около 06:00</label>
       <label class="check"><input type="checkbox" id="autoEvening"> Вечер по расписанию, около 22:00</label>
       <div class="status" id="runStatus"></div>
-      <div class="hint">Кнопкам нужно право токена Actions: Read and write. Прогон занимает около минуты.</div>
+      <div class="hint">Прогон занимает около минуты. Расписание работает само по себе, кнопки нужны, только когда ждать не хочется.</div>
     </div>
 
     <div class="card">
@@ -1373,6 +1374,24 @@
     return d.toLocaleDateString('ru-RU') + ' (через ' + days + ' дн.)';
   }
 
+  // Права на Actions отдельные от Contents, и без них кнопки прогона отвечают
+  // отказом. Проверяем заранее, а не в момент, когда прогон понадобился.
+  function checkActions(cell) {
+    var owner = get(LS.owner, '').trim();
+    return api('/repos/' + owner + '/' + REPO_DATA + '/actions/workflows?per_page=1')
+      .then(function () {
+        cell.textContent = 'доступен';
+        cell.style.color = 'var(--accent)';
+        return true;
+      }).catch(function (err) {
+        cell.textContent = (err.status === 403 || err.status === 404)
+          ? 'нет права Actions'
+          : 'ошибка ' + err.status;
+        cell.style.color = 'var(--err)';
+        return false;
+      });
+  }
+
   function checkRepo(repo, cell) {
     var owner = get(LS.owner, '').trim();
     return api('/repos/' + owner + '/' + repo).then(function (r) {
@@ -1413,12 +1432,14 @@
       }
       return Promise.all([
         checkRepo(REPO_DATA, $('kvData')),
-        checkRepo(REPO_DIARY, $('kvDiary'))
+        checkRepo(REPO_DIARY, $('kvDiary')),
+        checkActions($('kvActions'))
       ]);
     }).then(function (res) {
       $('kvExp').textContent = fmtExp(get(LS.exp, ''));
-      if (res[0] && res[1]) status(st, 'Токен рабочий, в оба репозитория можно писать.', 'ok');
-      else status(st, 'Токен принят, но куда-то писать нельзя. Смотрите строки ниже.', 'warn');
+      if (res[0] && res[1] && res[2]) status(st, 'Токен рабочий: запись в оба репозитория и запуск прогонов.', 'ok');
+      else if (res[0] && res[1]) status(st, 'Записывать можно, но кнопки прогона работать не будут: токену не выдано право Actions.', 'warn');
+      else status(st, 'Токен принят, но не всё доступно. Смотрите строки ниже.', 'warn');
       flush(true);
     }).catch(function (err) {
       status(st, err.message, 'err');
