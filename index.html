@@ -465,8 +465,8 @@
         <button id="runEvening">Разобрать инбокс</button>
         <button id="runMorning">Собрать план</button>
       </div>
-      <label class="check"><input type="checkbox" id="autoMorning"> Утро по расписанию, около 06:00</label>
-      <label class="check"><input type="checkbox" id="autoEvening"> Вечер по расписанию, около 22:00</label>
+      <label class="check"><input type="checkbox" id="autoMorning"> Утренняя страховка: соберёт план, если ночью не вышло</label>
+      <label class="check"><input type="checkbox" id="autoEvening"> Ночной разбор инбокса и план на утро</label>
       <div class="status" id="runStatus"></div>
       <div class="hint">Прогон занимает около минуты. Расписание работает само по себе, кнопки нужны, только когда ждать не хочется.</div>
     </div>
@@ -834,7 +834,7 @@
     body.textContent = '';
 
     if (!plan) {
-      body.appendChild(el('div', 'empty', 'Плана на сегодня ещё нет. Утренний прогон собирает его около 06:00.'));
+      body.appendChild(el('div', 'empty', 'Плана на сегодня ещё нет. Он собирается ночью, сразу после разбора инбокса, а если ночью не вышло, то утренним прогоном.'));
       return;
     }
 
