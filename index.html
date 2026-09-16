@@ -114,6 +114,19 @@
   .noterow time { margin: 0; flex: 0 0 auto; }
   .topicpick { flex: 1; min-width: 0; min-height: 36px; padding: 4px 8px; font-size: 13px; }
   #nTopicList .task input { min-height: 40px; }
+  .after { font-size: 12px; color: var(--dim); margin-top: 2px; }
+  .nextbtn { margin-top: 8px; min-height: 34px; padding: 4px 12px; font-size: 13px; border-radius: 10px; }
+  .nextform {
+    display: flex; flex-direction: column; gap: 8px;
+    margin: 0 0 12px 44px; padding: 12px;
+    border: 1px solid var(--line); border-radius: 12px; background: var(--panel);
+  }
+  .nextform .row { align-items: center; }
+  .nextform input[type=date], .nextform input[type=time] {
+    font: inherit; min-height: 40px; padding: 6px 8px; border-radius: 10px;
+    border: 1px solid var(--line); background: var(--panel-2); color: var(--text);
+  }
+  .mini { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--dim); margin: 0; }
   .picked { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
   .picked figure { position: relative; margin: 0; }
   .picked img { width: 72px; height: 72px; object-fit: cover; border-radius: 10px; display: block; }
@@ -802,6 +815,7 @@
 
     var body = el('div', 'body');
     body.appendChild(el('div', 't', t.title));
+    if (t.after_title) body.appendChild(el('div', 'after', 'после: ' + t.after_title));
 
     var bits = [];
     if (t.est_min) bits.push(t.est_min + ' мин');
@@ -826,7 +840,131 @@
     row.appendChild(box);
     row.appendChild(body);
     row.appendChild(skip);
-    return row;
+
+    if (t.status !== 'done') return row;
+    // Сделанное часто тянет за собой следующее, и дату следующего шага узнаёшь
+    // ровно в этот момент: записала на 18-е, значит звонить после 18-го.
+    var wrap = el('div', 'taskwrap');
+    wrap.appendChild(row);
+    var more = el('button', 'nextbtn', 'Дальше');
+    more.setAttribute('aria-expanded', 'false');
+    body.appendChild(more);
+    var form = null;
+    more.addEventListener('click', function () {
+      if (form) form.hidden = !form.hidden;
+      else { form = nextForm(t); wrap.appendChild(form); }
+      more.setAttribute('aria-expanded', String(!form.hidden));
+      if (!form.hidden) form.querySelector('input[type=text]').focus();
+    });
+    return wrap;
+  }
+
+  function nextForm(parent) {
+    var form = el('div', 'nextform');
+    form.appendChild(el('div', 'after', 'после: ' + parent.title));
+
+    var kind = document.createElement('select');
+    kind.setAttribute('aria-label', 'Что добавить');
+    [['step', 'Следующий шаг'], ['event', 'Встреча в календарь']].forEach(function (o) {
+      var op = document.createElement('option');
+      op.value = o[0];
+      op.textContent = o[1];
+      kind.appendChild(op);
+    });
+    form.appendChild(kind);
+
+    var title = document.createElement('input');
+    title.type = 'text';
+    title.autocomplete = 'off';
+    title.placeholder = 'что сделать';
+    form.appendChild(title);
+
+    var dates = el('div', 'row');
+    var dateLabel = el('label', 'mini');
+    var dateText = el('span', null, 'не раньше');
+    var date = document.createElement('input');
+    date.type = 'date';
+    date.min = mskToday();
+    dateLabel.appendChild(dateText);
+    dateLabel.appendChild(date);
+    var time = document.createElement('input');
+    time.type = 'time';
+    time.hidden = true;
+    dates.appendChild(dateLabel);
+    dates.appendChild(time);
+    form.appendChild(dates);
+
+    var add = el('button', 'primary', 'Добавить');
+    form.appendChild(add);
+    var done = el('div', 'hint');
+    form.appendChild(done);
+
+    kind.addEventListener('change', function () {
+      var ev = kind.value === 'event';
+      dateText.textContent = ev ? 'дата' : 'не раньше';
+      title.placeholder = ev ? 'например, Светлана у терапевта' : 'что сделать';
+      time.hidden = !ev;
+    });
+
+    add.addEventListener('click', function () {
+      var text = title.value.trim();
+      if (!text) { title.focus(); return; }
+      var ev = kind.value === 'event';
+      if (ev && !date.value) { date.focus(); return; }
+      var d = date.value;
+      add.disabled = true;
+      var job = ev ? addEventFromPlan(text, d, time.value || null) : addNextStep(parent.id, text, d || null);
+      job.then(function () {
+        var line = (ev ? 'встреча ' : 'шаг ') + '«' + text + '»' + (d ? (ev ? ' на ' : ', не раньше ') + ddmm(d) : '');
+        done.textContent = (done.textContent ? done.textContent + '; ' : 'Добавлено: ') + line;
+        title.value = '';
+        date.value = '';
+        time.value = '';
+        title.focus();
+      }).catch(function (err) {
+        status($('planStatus'), err.message, 'err');
+      }).then(function () { add.disabled = false; });
+    });
+    return form;
+  }
+
+  // Шаг идёт в общий список, а не в сегодняшний план: он про потом. Без даты
+  // планировщик возьмёт его на общих основаниях.
+  function addNextStep(parentId, title, notBefore) {
+    var today = mskToday();
+    status($('planStatus'), 'Добавляю шаг...', '');
+    return updateJson(REPO_DATA, 'backlog.json', function (backlog) {
+      var tasks = backlog.tasks || (backlog.tasks = []);
+      tasks.push({
+        id: newTaskId(tasks.map(function (t) { return t.id; })),
+        title: title, due: null,
+        not_before: notBefore && notBefore > today ? notBefore : null,
+        after: parentId, est_min: null, source: null,
+        first_seen: today, carry_count: 0, last_carry_date: null,
+        last_planned_date: null, status: 'open', done_at: null
+      });
+      return backlog;
+    }, 'следующий шаг: ' + title).then(function () {
+      status($('planStatus'), 'Шаг добавлен.', 'ok');
+    });
+  }
+
+  // Встреча уходит в events.json, в календарь её отправит ближайший прогон.
+  function addEventFromPlan(title, date, time) {
+    status($('planStatus'), 'Добавляю встречу...', '');
+    return updateJson(REPO_DATA, 'events.json', function (events) {
+      var items = events.items || (events.items = []);
+      var taken = items.map(function (e) { return e.id; });
+      var id;
+      do { id = 'evt_' + Math.random().toString(16).slice(2, 8); } while (taken.indexOf(id) !== -1);
+      items.push({
+        id: id, kind: 'event', title: title, date: date, time: time,
+        source: null, created_at: new Date().toISOString(), calendar_id: null
+      });
+      return events;
+    }, 'встреча: ' + title).then(function () {
+      status($('planStatus'), 'Встреча добавлена, в календарь уйдёт с ближайшим прогоном.', 'ok');
+    });
   }
 
   function renderPlan(plan) {
@@ -988,14 +1126,20 @@
 
   /* ---------- все задачи ---------- */
 
-  function backlogRow(t, waiting) {
+  function ddmm(date) {
+    return date ? date.slice(8, 10) + '.' + date.slice(5, 7) : '';
+  }
+
+  function backlogRow(t, waiting, titles) {
     var row = el('div', 'task');
     var body = el('div', 'body');
     body.appendChild(el('div', 't', t.title));
+    if (t.after && titles && titles[t.after]) body.appendChild(el('div', 'after', 'после: ' + titles[t.after]));
 
     var meta = el('div', 'meta');
     if (t.carry_count) meta.appendChild(el('span', 'tag', 'перенос ' + t.carry_count));
     if (waiting != null && waiting > 0) meta.appendChild(el('span', 'tag', 'ждёт ' + waiting + ' дн.'));
+    if (t.not_before && t.not_before > mskToday()) meta.appendChild(el('span', 'tag', 'не раньше ' + ddmm(t.not_before)));
 
     var bits = [];
     if (t.est_min) bits.push(t.est_min + ' мин');
@@ -1031,24 +1175,39 @@
       planned = {};
       plan.tasks.forEach(function (t) { planned[t.id] = true; });
     }
+    var titles = {};
+    ((backlog && backlog.tasks) || []).forEach(function (t) { titles[t.id] = t.title; });
+
     var inPlan = [];
     var waiting = [];
+    var later = [];
     open.forEach(function (t) {
       var today_ = planned ? !!planned[t.id] : t.last_planned_date === today;
       if (today_) inPlan.push(t);
+      else if (t.not_before && t.not_before > today) later.push(t);
       else waiting.push(t);
     });
+    later.sort(function (a, b) { return a.not_before < b.not_before ? -1 : 1; });
 
-    waiting.forEach(function (t) { t._w = daysSince(t.last_planned_date || t.first_seen, today); });
+    // ожидание отложенной задачи начинается с её «не раньше», как и в планировщике
+    waiting.forEach(function (t) {
+      var since = t.last_planned_date || t.first_seen;
+      if (t.not_before && t.not_before > since) since = t.not_before;
+      t._w = daysSince(since, today);
+    });
     waiting.sort(function (a, b) { return b._w - a._w; });
 
     if (inPlan.length) {
       body.appendChild(el('div', 'block-title', 'В плане сегодня (' + inPlan.length + ')'));
-      inPlan.forEach(function (t) { body.appendChild(backlogRow(t, null)); });
+      inPlan.forEach(function (t) { body.appendChild(backlogRow(t, null, titles)); });
     }
     if (waiting.length) {
       body.appendChild(el('div', 'block-title', 'Ждут своего дня (' + waiting.length + ')'));
-      waiting.forEach(function (t) { body.appendChild(backlogRow(t, t._w)); });
+      waiting.forEach(function (t) { body.appendChild(backlogRow(t, t._w, titles)); });
+    }
+    if (later.length) {
+      body.appendChild(el('div', 'block-title', 'Отложены до своего дня (' + later.length + ')'));
+      later.forEach(function (t) { body.appendChild(backlogRow(t, null, titles)); });
     }
   }
 
