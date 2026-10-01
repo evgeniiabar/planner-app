@@ -1035,16 +1035,24 @@
     }
 
     status($('planStatus'), 'Сохраняю...', '');
+    // Задачи может не оказаться в сегодняшнем плане: страница на телефоне живёт
+    // днями, а план за это время пересобрался. Раньше отметка в таком случае
+    // молча отменялась, а подпись говорила «Сохранено».
+    var found = false;
     updateJson(REPO_DATA, 'plans/' + mskToday() + '.json', function (plan) {
-      var hit = false;
+      found = false;
       (plan.tasks || []).forEach(function (t) {
         if (t.id !== id) return;
-        hit = true;
+        found = true;
         t.status = next;
         t.done_at = at;
       });
-      return hit ? plan : null;
+      return found ? plan : null;
     }, 'план: ' + id + ' -> ' + next).then(function (plan) {
+      if (!found) {
+        status($('planStatus'), 'Этой задачи в сегодняшнем плане уже нет, он пересобран. Открываю свежий.', 'warn');
+        return loadPlan(true);
+      }
       planCache = plan;
       renderPlan(plan);
       status($('planStatus'), 'Сохранено.', 'ok');
@@ -2674,7 +2682,12 @@
 
   window.addEventListener('online', function () { flush(true); dFlush(true); });
   document.addEventListener('visibilitychange', function () {
-    if (document.visibilityState === 'visible') { flush(true); dFlush(true); }
+    if (document.visibilityState !== 'visible') return;
+    flush(true);
+    dFlush(true);
+    // Приложение с домашнего экрана живёт в памяти днями. Без этого на экране
+    // остаётся вчерашний план, и отметки уходят в пустоту.
+    loadPlan(true);
   });
 
   if (!get(LS.owner, '')) set(LS.owner, DEFAULT_OWNER);
