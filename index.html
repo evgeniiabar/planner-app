@@ -525,6 +525,7 @@
       <div class="kv"><span>planner-data</span><span id="kvData">-</span></div>
       <div class="kv"><span>diary</span><span id="kvDiary">-</span></div>
       <div class="kv"><span>Запуск прогонов</span><span id="kvActions">-</span></div>
+      <div class="kv"><span>Хранилище токена</span><span id="kvStore">-</span></div>
     </div>
 
     <div class="card">
@@ -617,7 +618,7 @@
     opts = opts || {};
     var token = get(LS.token, '');
     if (!token) {
-      return Promise.reject(new ApiError('Токен не задан. Откройте настройки.', 0, 'notoken'));
+      return Promise.reject(new ApiError('Токена в этом браузере нет. Бывает, что телефон стирает его сам, если приложение долго не открывали. Вставьте токен заново в настройках.', 0, 'notoken'));
     }
     var headers = {
       'Authorization': 'Bearer ' + token,
@@ -1709,7 +1710,9 @@
     RUN_BUTTONS.forEach(function (id) { $(id).disabled = true; });
     status(st, label + ': запускаю...', '');
 
+    var step = 'чтение прогонов';
     return lastRunId(file).then(function (before) {
+      step = 'запуск';
       return api(runsUrl(file, '/dispatches'), { method: 'POST', body: { ref: 'main' } })
         .then(function () {
           status(st, label + ': запущен, жду результата...', '');
@@ -1717,9 +1720,10 @@
         });
     }).catch(function (err) {
       if (err.status === 403 || err.status === 404) {
-        status(st, 'Не хватает прав на запуск. Токену нужно право Actions: Read and write.', 'err');
+        status(st, 'Отказ на шаге «' + step + '», код ' + err.status +
+          '. Токену нужно право Actions: Read and write на репозиторий planner-data.', 'err');
       } else {
-        status(st, err.message, 'err');
+        status(st, 'Сбой на шаге «' + step + '»: ' + err.message, 'err');
       }
     }).then(function () {
       RUN_BUTTONS.forEach(function (id) { $(id).disabled = false; });
@@ -1839,6 +1843,8 @@
       ]);
     }).then(function (res) {
       $('kvExp').textContent = fmtExp(get(LS.exp, ''));
+      $('kvStore').textContent = storagePinned === null ? 'не ответил' : (storagePinned ? 'закреплено' : 'может очиститься');
+      $('kvStore').style.color = storagePinned ? 'var(--accent)' : 'var(--warn)';
       if (res[0] && res[1] && res[2]) status(st, 'Токен рабочий: запись в оба репозитория и запуск прогонов.', 'ok');
       else if (res[0] && res[1]) status(st, 'Записывать можно, но кнопки прогона работать не будут: токену не выдано право Actions.', 'warn');
       else status(st, 'Токен принят, но не всё доступно. Смотрите строки ниже.', 'warn');
@@ -2747,6 +2753,19 @@
     // остаётся вчерашний план, и отметки уходят в пустоту.
     loadPlan(true);
   });
+
+  // Safari вычищает хранилище сайта, если приложение неделю не открывали, и токен
+  // пропадает сам. Просим браузер закрепить хранилище: с домашнего экрана он обычно
+  // соглашается. Отказ не беда, просто токен придётся иногда вставлять заново.
+  var storagePinned = null;
+  try {
+    if (navigator.storage && navigator.storage.persist) {
+      navigator.storage.persisted().then(function (already) {
+        if (already) { storagePinned = true; return true; }
+        return navigator.storage.persist();
+      }).then(function (okNow) { storagePinned = !!okNow; }).catch(function () {});
+    }
+  } catch (e) {}
 
   if (!get(LS.owner, '')) set(LS.owner, DEFAULT_OWNER);
   $('owner').value = get(LS.owner, DEFAULT_OWNER);
