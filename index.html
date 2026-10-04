@@ -155,6 +155,12 @@
   .ev.pro { border-left-color: var(--d-line); background: var(--d-bg); }
   .ev.family { border-left-color: var(--m-line); background: var(--m-bg); }
   .ev.going { border-left-color: var(--accent); background: var(--accent-soft); }
+  .ev.thinking { border-left-color: var(--warn); }
+  .ev .evstate { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
+  .ev .evtag { font-size:12px; color:var(--dim); border:1px solid var(--line); border-radius:999px; padding:3px 8px; background:var(--panel-2); }
+  .ev .actions { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; margin-top:10px; }
+  .ev .actions button { min-height:40px; padding:6px 8px; font-size:13px; }
+  .ev .actions .wide { grid-column:1 / -1; }
   .ev h3 { font-size: 15px; font-weight: 600; margin: 0 0 6px; word-break: break-word; }
   .ev .when { font-weight: 600; }
   .ev .line { font-size: 13px; color: var(--dim); margin-top: 3px; word-break: break-word; }
@@ -1981,7 +1987,7 @@
     var items = (data && data.items) || [];
     var today = mskToday();
     var mine = items.filter(function (e) {
-      return e.stream === evStream && e.status !== "hidden" && e.date >= today;
+      return e.stream === evStream && e.status !== "hidden" && e.status !== "skip" && e.date >= today;
     });
     mine.sort(function (a, b) { return a.date < b.date ? -1 : (a.date > b.date ? 1 : 0); });
     var body = $("evBody");
@@ -1991,7 +1997,8 @@
       return;
     }
     mine.forEach(function (e) {
-      var card = el("div", "ev " + e.stream + (e.status === "going" ? " going" : ""));
+      var stateClass = e.status === "going" ? " going" : (e.status === "thinking" ? " thinking" : "");
+      var card = el("div", "ev " + e.stream + stateClass);
       var h = el("h3");
       h.appendChild(el("span", "when", evWhen(e)));
       h.appendChild(document.createTextNode(" · " + e.title));
@@ -2002,27 +2009,37 @@
       card.appendChild(el("div", "line", bits));
       if (e.url) {
         var a = document.createElement("a");
-        a.href = e.url;
-        a.target = "_blank";
-        a.rel = "noopener";
-        a.textContent = e.url.replace(/^https?:\/\//, "").slice(0, 60);
-        var wrap = el("div", "line");
-        wrap.appendChild(a);
-        card.appendChild(wrap);
+        a.href = e.url; a.target = "_blank"; a.rel = "noopener";
+        a.textContent = "Подробнее / регистрация ↗";
+        var wrap = el("div", "line"); wrap.appendChild(a); card.appendChild(wrap);
       }
       if (e.why) card.appendChild(el("div", "why", e.why));
-      var row = el("div", "row");
-      if (e.status === "going") {
-        row.appendChild(el("div", "line", "Идём. Событие в календаре."));
-      } else {
-        var go = el("button", "primary", "Иду");
-        go.style.flex = "1";
-        go.addEventListener("click", function () { goToEvent(e); });
-        row.appendChild(go);
-        var no = el("button", null, "Не пойду");
-        no.addEventListener("click", function () { hideEvent(e.id); });
-        row.appendChild(no);
-      }
+
+      var tags = el("div", "evstate");
+      tags.appendChild(el("span", "evtag",
+        e.status === "going" ? "✅ Пойду" : e.status === "thinking" ? "🤔 Думаю" : "🆕 Новое"));
+      if (e.registration_status === "required") tags.appendChild(el("span", "evtag", "📝 Надо зарегистрироваться"));
+      if (e.registration_status === "registered") tags.appendChild(el("span", "evtag", "📝 Зарегистрирована"));
+      if (e.calendar_id) tags.appendChild(el("span", "evtag", "📅 В календаре"));
+      card.appendChild(tags);
+
+      var row = el("div", "actions");
+      var go = el("button", e.status === "going" ? "primary" : null, "✅ Пойду");
+      go.addEventListener("click", function () { setEventStatus(e.id, "going"); });
+      row.appendChild(go);
+      var think = el("button", e.status === "thinking" ? "primary" : null, "🤔 Подумаю");
+      think.addEventListener("click", function () { setEventStatus(e.id, "thinking"); });
+      row.appendChild(think);
+      var reg = el("button", null, e.registration_status === "registered" ? "✓ Зарегистрирована" : "📝 Регистрация");
+      reg.addEventListener("click", function () { registrationEvent(e); });
+      row.appendChild(reg);
+      var cal = el("button", null, e.calendar_id ? "✓ В календаре" : "📅 В календарь");
+      cal.disabled = !!e.calendar_id;
+      cal.addEventListener("click", function () { calendarEvent(e); });
+      row.appendChild(cal);
+      var no = el("button", "wide", "❌ Не пойду");
+      no.addEventListener("click", function () { hideEvent(e.id); });
+      row.appendChild(no);
       card.appendChild(row);
       body.appendChild(card);
     });
@@ -2038,56 +2055,62 @@
     });
   }
 
+  function setEventStatus(id, value) {
+    status($("eventsStatus"), "Сохраняю...", "");
+    return saveEvents(function (data) {
+      var hit = false;
+      data.items.forEach(function (e) { if (e.id === id) { e.status = value; hit = true; } });
+      return hit;
+    }, "афиша: статус " + value).then(function () {
+      status($("eventsStatus"), value === "going" ? "Отмечено: пойду." : "Оставила подумать.", "ok");
+    }).catch(function (err) { status($("eventsStatus"), err.message, "err"); });
+  }
+
   function hideEvent(id) {
     status($("eventsStatus"), "Убираю...", "");
     return saveEvents(function (data) {
       var hit = false;
-      data.items.forEach(function (e) { if (e.id === id) { e.status = "hidden"; hit = true; } });
+      data.items.forEach(function (e) { if (e.id === id) { e.status = "skip"; hit = true; } });
       return hit;
     }, "афиша: не пойду").then(function () {
       status($("eventsStatus"), "Убрано из списка.", "ok");
-    }).catch(function (err) {
-      status($("eventsStatus"), err.message, "err");
-    });
+    }).catch(function (err) { status($("eventsStatus"), err.message, "err"); });
   }
 
-  // «Иду» делает три вещи: помечает выбор, ставит событие в календарь и заводит
-  // задачу записаться, потому что без регистрации на половину из них не попасть.
-  // Срок задачи: завтра или день события, смотря что раньше.
-  function goToEvent(e) {
-    var today = mskToday();
-    status($("eventsStatus"), "Записываю...", "");
+  function registrationEvent(e) {
+    if (e.registration_status === "registered") return Promise.resolve();
+    if (e.url) window.open(e.url, "_blank", "noopener");
+    status($("eventsStatus"), "Открыла страницу регистрации.", "");
+    return saveEvents(function (data) {
+      data.items.forEach(function (x) {
+        if (x.id === e.id && x.registration_status !== "registered") x.registration_status = "required";
+      });
+    }, "афиша: нужна регистрация " + e.title).then(function () {
+      status($("eventsStatus"), "Отметила, что нужна регистрация. После регистрации нажмите кнопку ещё раз не нужно — пока это напоминание.", "ok");
+    }).catch(function (err) { status($("eventsStatus"), err.message, "err"); });
+  }
+
+  function calendarEvent(e) {
+    if (e.calendar_id) return Promise.resolve();
+    status($("eventsStatus"), "Добавляю в очередь календаря...", "");
+    var eventId = null;
     return updateJson(REPO_DATA, "events.json", function (events) {
       var items = events.items || (events.items = []);
+      var existing = items.filter(function (x) { return x.source === "found:" + e.id; })[0];
+      if (existing) { eventId = existing.id; return events; }
       var taken = items.map(function (x) { return x.id; });
-      var id;
-      do { id = "evt_" + Math.random().toString(16).slice(2, 8); } while (taken.indexOf(id) !== -1);
+      do { eventId = "evt_" + Math.random().toString(16).slice(2, 8); } while (taken.indexOf(eventId) !== -1);
       items.push({
-        id: id, kind: "event", title: e.title, date: e.date, time: e.time,
-        source: null, created_at: new Date().toISOString(), calendar_id: null
+        id: eventId, kind: "event", title: e.title, date: e.date, time: e.time,
+        source: "found:" + e.id, created_at: new Date().toISOString(), calendar_id: null
       });
       return events;
     }, "афиша: в календарь " + e.title).then(function () {
-      var due = e.date;
-      var tomorrow = new Date(Date.parse(today + "T00:00:00Z") + 86400000).toISOString().slice(0, 10);
-      if (tomorrow < due) due = tomorrow;
-      return updateJson(REPO_DATA, "backlog.json", function (backlog) {
-        var tasks = backlog.tasks || (backlog.tasks = []);
-        tasks.push({
-          id: newTaskId(tasks.map(function (t) { return t.id; })),
-          title: "Записаться: " + e.title, due: due,
-          not_before: null, after: null, est_min: null, source: null,
-          first_seen: today, carry_count: 0, last_carry_date: null,
-          last_planned_date: null, status: "open", done_at: null
-        });
-        return backlog;
-      }, "афиша: записаться на " + e.title);
-    }).then(function () {
       return saveEvents(function (data) {
-        data.items.forEach(function (x) { if (x.id === e.id) x.status = "going"; });
-      }, "афиша: иду на " + e.title);
+        data.items.forEach(function (x) { if (x.id === e.id) x.calendar_id = "pending:" + eventId; });
+      }, "афиша: календарь ожидает синхронизации " + e.title);
     }).then(function () {
-      status($("eventsStatus"), "В календаре, и задача записаться заведена.", "ok");
+      status($("eventsStatus"), "Добавлено. В Google Calendar попадёт при ближайшей синхронизации.", "ok");
       loadAll(true);
     }).catch(function (err) {
       status($("eventsStatus"), err.message, "err");
