@@ -150,6 +150,18 @@
   .topicpick { flex: 1; min-width: 0; min-height: 36px; padding: 4px 8px; font-size: 13px; }
   #nTopicList .task input { min-height: 40px; }
   .after { font-size: 12px; color: var(--dim); margin-top: 2px; }
+  .ev { border: 1px solid var(--line); border-left: 3px solid var(--line); border-radius: 14px;
+    padding: 12px; margin-top: 10px; background: var(--panel); box-shadow: var(--shadow); }
+  .ev.pro { border-left-color: var(--d-line); background: var(--d-bg); }
+  .ev.family { border-left-color: var(--m-line); background: var(--m-bg); }
+  .ev.going { border-left-color: var(--accent); background: var(--accent-soft); }
+  .ev h3 { font-size: 15px; font-weight: 600; margin: 0 0 6px; word-break: break-word; }
+  .ev .when { font-weight: 600; }
+  .ev .line { font-size: 13px; color: var(--dim); margin-top: 3px; word-break: break-word; }
+  .ev .why { font-size: 13px; margin-top: 6px; }
+  .ev a { color: var(--accent); word-break: break-all; }
+  .ev .row { margin-top: 10px; }
+  .ev .row button { min-height: 40px; padding: 6px 14px; font-size: 14px; }
   .nextbtn { margin-top: 8px; min-height: 34px; padding: 4px 12px; font-size: 13px; border-radius: 10px; }
   .nextform {
     display: flex; flex-direction: column; gap: 8px;
@@ -351,7 +363,8 @@
     background: transparent;
     color: var(--dim);
     border-radius: 0;
-    font-size: 11px;
+    font-size: 10px;
+    letter-spacing: -.02em;
     min-height: 56px;
     padding: 0 1px;
     min-width: 0;
@@ -506,6 +519,20 @@
     </div>
   </section>
 
+  <section class="view" id="view-events" hidden>
+    <div class="seg">
+      <button id="segPro" aria-selected="true">Мне</button>
+      <button id="segFam" aria-selected="false">С детьми</button>
+    </div>
+    <div id="evBody"></div>
+    <div class="status" id="eventsStatus"></div>
+    <div class="row" style="margin-top:12px">
+      <button id="evReload">Обновить</button>
+      <button id="runEvents">Поискать сейчас</button>
+    </div>
+    <div class="hint" id="evHint"></div>
+  </section>
+
   <section class="view" id="view-settings" hidden>
     <label for="owner">Владелец на GitHub</label>
     <input type="text" id="owner" placeholder="например barakshina" autocomplete="off" autocapitalize="none" spellcheck="false">
@@ -538,6 +565,7 @@
       </div>
       <label class="check"><input type="checkbox" id="autoMorning"> Утренняя страховка: соберёт план, если ночью не вышло</label>
       <label class="check"><input type="checkbox" id="autoEvening"> Ночной разбор инбокса и план на утро</label>
+      <label class="check"><input type="checkbox" id="autoEvents"> Поиск мероприятий по воскресеньям</label>
       <div class="status" id="runStatus"></div>
       <div class="hint">Прогон занимает около минуты. Расписание работает само по себе, кнопки нужны, только когда ждать не хочется.</div>
     </div>
@@ -563,6 +591,7 @@
   <button data-tab="food" aria-selected="false">Еда</button>
   <button data-tab="diary" aria-selected="false">Дневник</button>
   <button data-tab="notes" aria-selected="false">Заметки</button>
+  <button data-tab="events" aria-selected="false">Афиша</button>
 </nav>
 
 <script>
@@ -1659,7 +1688,7 @@
 
   /* ---------- ручной запуск прогонов ---------- */
 
-  var WORKFLOWS = { morning: 'morning.yml', evening: 'evening.yml' };
+  var WORKFLOWS = { morning: 'morning.yml', evening: 'evening.yml', events: 'events.yml' };
 
   function runsUrl(file, tail) {
     var owner = get(LS.owner, '').trim();
@@ -1694,6 +1723,7 @@
         loadAll(true);
         loadFood(true);
         loadPending(true);
+        loadEvents(true);
         return;
       }
       status(st, label + ': прогон упал (' + run.conclusion + '). Данные не тронуты.', 'err');
@@ -1702,7 +1732,7 @@
     });
   }
 
-  var RUN_BUTTONS = ['runMorning', 'runEvening', 'runEveningInbox'];
+  var RUN_BUTTONS = ['runMorning', 'runEvening', 'runEveningInbox', 'runEvents'];
 
   function runWorkflow(kind, label, statusId) {
     var file = WORKFLOWS[kind];
@@ -1745,15 +1775,18 @@
     return getJson(REPO_DATA, SETTINGS_PATH).then(function (f) {
       $("autoMorning").checked = f.json.auto_morning !== false;
       $("autoEvening").checked = f.json.auto_evening !== false;
+      $("autoEvents").checked = f.json.auto_events !== false;
     }).catch(function () {
       $("autoMorning").checked = true;
       $("autoEvening").checked = true;
+      $("autoEvents").checked = true;
     });
   }
 
   function saveSettings() {
     var morning = $("autoMorning").checked;
     var evening = $("autoEvening").checked;
+    var events = $("autoEvents").checked;
     status($("runStatus"), "Сохраняю...", "");
     return updateFile(REPO_DATA, SETTINGS_PATH, function (text) {
       var cur = {};
@@ -1761,6 +1794,7 @@
       cur.schema_version = 1;
       cur.auto_morning = morning;
       cur.auto_evening = evening;
+      cur.auto_events = events;
       return JSON.stringify(cur, null, 2) + '\n';
     }, "настройки: автопрогон").then(function () {
       status($("runStatus"), "Сохранено.", "ok");
@@ -1930,6 +1964,160 @@
   function photoPut(key, b64) { return idbDo("readwrite", function (st) { return st.put(b64, key); }); }
   function photoGet(key) { return idbDo("readonly", function (st) { return st.get(key); }); }
   function photoDel(key) { return idbDo("readwrite", function (st) { return st.delete(key); }); }
+
+  /* ---------- афиша ---------- */
+
+  var EVENTS_PATH = "found_events.json";
+  var eventsCache = null;
+  var evStream = "pro";
+
+  function evWhen(e) {
+    var d = new Date(e.date + "T00:00:00Z");
+    var day = isNaN(d) ? e.date : d.toLocaleDateString("ru-RU", { day: "numeric", month: "long", weekday: "short" });
+    return day + (e.time ? ", " + e.time : "");
+  }
+
+  function renderEvents(data) {
+    var items = (data && data.items) || [];
+    var today = mskToday();
+    var mine = items.filter(function (e) {
+      return e.stream === evStream && e.status !== "hidden" && e.date >= today;
+    });
+    mine.sort(function (a, b) { return a.date < b.date ? -1 : (a.date > b.date ? 1 : 0); });
+    var body = $("evBody");
+    body.textContent = "";
+    if (!mine.length) {
+      body.appendChild(el("div", "empty", "Здесь пока пусто. Поиск идёт по воскресеньям, или нажмите «Поискать сейчас»."));
+      return;
+    }
+    mine.forEach(function (e) {
+      var card = el("div", "ev " + e.stream + (e.status === "going" ? " going" : ""));
+      var h = el("h3");
+      h.appendChild(el("span", "when", evWhen(e)));
+      h.appendChild(document.createTextNode(" · " + e.title));
+      card.appendChild(h);
+      var bits = [e.format, e.place, e.price].filter(Boolean).join(" · ");
+      if (e.audience && e.stream === "family") bits = e.audience + " · " + bits;
+      if (e.lang === "английский") bits += " · английский";
+      card.appendChild(el("div", "line", bits));
+      if (e.url) {
+        var a = document.createElement("a");
+        a.href = e.url;
+        a.target = "_blank";
+        a.rel = "noopener";
+        a.textContent = e.url.replace(/^https?:\/\//, "").slice(0, 60);
+        var wrap = el("div", "line");
+        wrap.appendChild(a);
+        card.appendChild(wrap);
+      }
+      if (e.why) card.appendChild(el("div", "why", e.why));
+      var row = el("div", "row");
+      if (e.status === "going") {
+        row.appendChild(el("div", "line", "Идём. Событие в календаре."));
+      } else {
+        var go = el("button", "primary", "Иду");
+        go.style.flex = "1";
+        go.addEventListener("click", function () { goToEvent(e); });
+        row.appendChild(go);
+        var no = el("button", null, "Не пойду");
+        no.addEventListener("click", function () { hideEvent(e.id); });
+        row.appendChild(no);
+      }
+      card.appendChild(row);
+      body.appendChild(card);
+    });
+  }
+
+  function saveEvents(mutate, message) {
+    return updateJson(REPO_DATA, EVENTS_PATH, function (data) {
+      data.items = data.items || [];
+      return mutate(data) === false ? null : data;
+    }, message).then(function (data) {
+      eventsCache = data;
+      renderEvents(data);
+    });
+  }
+
+  function hideEvent(id) {
+    status($("eventsStatus"), "Убираю...", "");
+    return saveEvents(function (data) {
+      var hit = false;
+      data.items.forEach(function (e) { if (e.id === id) { e.status = "hidden"; hit = true; } });
+      return hit;
+    }, "афиша: не пойду").then(function () {
+      status($("eventsStatus"), "Убрано из списка.", "ok");
+    }).catch(function (err) {
+      status($("eventsStatus"), err.message, "err");
+    });
+  }
+
+  // «Иду» делает три вещи: помечает выбор, ставит событие в календарь и заводит
+  // задачу записаться, потому что без регистрации на половину из них не попасть.
+  // Срок задачи: завтра или день события, смотря что раньше.
+  function goToEvent(e) {
+    var today = mskToday();
+    status($("eventsStatus"), "Записываю...", "");
+    return updateJson(REPO_DATA, "events.json", function (events) {
+      var items = events.items || (events.items = []);
+      var taken = items.map(function (x) { return x.id; });
+      var id;
+      do { id = "evt_" + Math.random().toString(16).slice(2, 8); } while (taken.indexOf(id) !== -1);
+      items.push({
+        id: id, kind: "event", title: e.title, date: e.date, time: e.time,
+        source: null, created_at: new Date().toISOString(), calendar_id: null
+      });
+      return events;
+    }, "афиша: в календарь " + e.title).then(function () {
+      var due = e.date;
+      var tomorrow = new Date(Date.parse(today + "T00:00:00Z") + 86400000).toISOString().slice(0, 10);
+      if (tomorrow < due) due = tomorrow;
+      return updateJson(REPO_DATA, "backlog.json", function (backlog) {
+        var tasks = backlog.tasks || (backlog.tasks = []);
+        tasks.push({
+          id: newTaskId(tasks.map(function (t) { return t.id; })),
+          title: "Записаться: " + e.title, due: due,
+          not_before: null, after: null, est_min: null, source: null,
+          first_seen: today, carry_count: 0, last_carry_date: null,
+          last_planned_date: null, status: "open", done_at: null
+        });
+        return backlog;
+      }, "афиша: записаться на " + e.title);
+    }).then(function () {
+      return saveEvents(function (data) {
+        data.items.forEach(function (x) { if (x.id === e.id) x.status = "going"; });
+      }, "афиша: иду на " + e.title);
+    }).then(function () {
+      status($("eventsStatus"), "В календаре, и задача записаться заведена.", "ok");
+      loadAll(true);
+    }).catch(function (err) {
+      status($("eventsStatus"), err.message, "err");
+      loadEvents(true);
+    });
+  }
+
+  function loadEvents(quiet) {
+    if (!get(LS.token, "")) return Promise.resolve();
+    if (!quiet) status($("eventsStatus"), "Загружаю...", "");
+    return getJson(REPO_DATA, EVENTS_PATH).then(function (f) {
+      eventsCache = f.json;
+      renderEvents(f.json);
+      var at = f.json.last_run;
+      $("evHint").textContent = at
+        ? "Последний поиск: " + new Date(at).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })
+        : "Поиска ещё не было.";
+      if (!quiet) status($("eventsStatus"), "", "");
+    }).catch(function (err) {
+      if (err.status === 404) { renderEvents({ items: [] }); return; }
+      status($("eventsStatus"), err.message, "err");
+    });
+  }
+
+  function showEvStream(name) {
+    evStream = name;
+    $("segPro").setAttribute("aria-selected", String(name === "pro"));
+    $("segFam").setAttribute("aria-selected", String(name === "family"));
+    renderEvents(eventsCache);
+  }
 
   /* ---------- заметки ---------- */
 
@@ -2632,8 +2820,8 @@
 
   /* ---------- вкладки ---------- */
 
-  var TITLES = { inbox: 'Инбокс', plan: 'План', all: 'Все задачи', stale: 'Зависшее', food: 'Еда', diary: 'Дневник', notes: 'Заметки', settings: 'Настройки' };
-  var TABS = ['inbox', 'plan', 'all', 'stale', 'food', 'diary', 'notes', 'settings'];
+  var TITLES = { inbox: 'Инбокс', plan: 'План', all: 'Все задачи', stale: 'Зависшее', food: 'Еда', diary: 'Дневник', notes: 'Заметки', events: 'Афиша', settings: 'Настройки' };
+  var TABS = ['inbox', 'plan', 'all', 'stale', 'food', 'diary', 'notes', 'events', 'settings'];
 
   function showTab(name) {
     TABS.forEach(function (t) {
@@ -2650,6 +2838,7 @@
     if (name === 'food') loadFood(false);
     if (name === 'diary') { renderDQueue(); dFlush(true); loadDiary(null, false); }
     if (name === 'notes') loadNotes(false);
+    if (name === 'events') loadEvents(false);
     if (name === 'settings') { loadState(); loadSettings(); }
   }
 
@@ -2687,6 +2876,13 @@
     addTopic(v);
   });
   $('nReload').addEventListener('click', function () { loadNotes(false); });
+  $('evReload').addEventListener('click', function () { loadEvents(false); });
+  $('segPro').addEventListener('click', function () { showEvStream('pro'); });
+  $('segFam').addEventListener('click', function () { showEvStream('family'); });
+  $('runEvents').addEventListener('click', function () {
+    runWorkflow('events', 'Поиск мероприятий', 'eventsStatus');
+  });
+  $('autoEvents').addEventListener('change', saveSettings);
   $('planAdd').addEventListener('click', function () {
     var i = $('planNew');
     var v = i.value.trim();
