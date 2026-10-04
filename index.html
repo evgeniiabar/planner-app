@@ -2030,7 +2030,10 @@
       var think = el("button", e.status === "thinking" ? "primary" : null, "🤔 Подумаю");
       think.addEventListener("click", function () { setEventStatus(e.id, "thinking"); });
       row.appendChild(think);
-      var reg = el("button", null, e.registration_status === "registered" ? "✓ Зарегистрирована" : "📝 Регистрация");
+      var regLabel = e.registration_status === "registered" ? "✓ Зарегистрирована"
+        : (e.registration_status === "required" ? "✓ Я зарегистрировалась" : "📝 Регистрация");
+      var reg = el("button", e.registration_status === "registered" ? "primary" : null, regLabel);
+      reg.disabled = e.registration_status === "registered";
       reg.addEventListener("click", function () { registrationEvent(e); });
       row.appendChild(reg);
       var cal = el("button", null, e.calendar_id ? "✓ В календаре" : "📅 В календарь");
@@ -2079,14 +2082,29 @@
 
   function registrationEvent(e) {
     if (e.registration_status === "registered") return Promise.resolve();
+
+    // Первый клик ведёт на страницу и оставляет напоминание. Второй подтверждает,
+    // что регистрация уже завершена. Это сознательно ручное подтверждение:
+    // внешний сайт регистрации приложению недоступен.
+    if (e.registration_status === "required") {
+      status($("eventsStatus"), "Сохраняю регистрацию...", "");
+      return saveEvents(function (data) {
+        data.items.forEach(function (x) {
+          if (x.id === e.id) x.registration_status = "registered";
+        });
+      }, "афиша: зарегистрирована " + e.title).then(function () {
+        status($("eventsStatus"), "Готово: отмечено «Зарегистрирована».", "ok");
+      }).catch(function (err) { status($("eventsStatus"), err.message, "err"); });
+    }
+
     if (e.url) window.open(e.url, "_blank", "noopener");
     status($("eventsStatus"), "Открыла страницу регистрации.", "");
     return saveEvents(function (data) {
       data.items.forEach(function (x) {
-        if (x.id === e.id && x.registration_status !== "registered") x.registration_status = "required";
+        if (x.id === e.id) x.registration_status = "required";
       });
     }, "афиша: нужна регистрация " + e.title).then(function () {
-      status($("eventsStatus"), "Отметила, что нужна регистрация. После регистрации нажмите кнопку ещё раз не нужно — пока это напоминание.", "ok");
+      status($("eventsStatus"), "Когда закончите регистрацию, нажмите «✓ Я зарегистрировалась».", "ok");
     }).catch(function (err) { status($("eventsStatus"), err.message, "err"); });
   }
 
