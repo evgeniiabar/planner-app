@@ -83,7 +83,7 @@
   header h1 { font-size: 20px; font-weight: 750; margin: 0; }
   .header-name { display: flex; align-items: center; gap: 10px; min-width: 0; }
   .header-mascot { border-radius: 8px; flex: 0 0 auto; }
-  .storage-label { color: var(--accent); background: var(--accent-soft); border-radius: 999px; padding: 4px 9px; font-size: 12px; white-space: nowrap; }
+  .storage-label { color: var(--accent); background: var(--accent-soft); border: 0; border-radius: 999px; min-height: 32px; padding: 4px 9px; font-size: 12px; white-space: nowrap; }
   .badge {
     font-size: 13px;
     color: var(--warn);
@@ -432,7 +432,7 @@
 <header>
   <div class="header-name"><img class="header-mascot" src="icons/planner-frog.svg" width="30" height="30" alt=""><h1 id="title">План</h1></div>
   <div style="display:flex;align-items:center;gap:8px">
-    <span class="storage-label" id="storageLabel"></span>
+    <button class="storage-label" id="storageLabel" aria-label="Настройки синхронизации"></button>
     <span class="badge" id="queueBadge" hidden></span>
     <button class="gear" id="gear" aria-label="Настройки">⚙</button>
   </div>
@@ -593,14 +593,19 @@
 
   <section class="view" id="view-settings" hidden>
     <div class="card mode-card">
-      <h2>Где лежат данные</h2>
+      <h2>Синхронизация задач</h2>
       <div id="storageDescription"></div>
       <div class="row" style="margin-top:10px">
-        <button id="useLocal" hidden>Перейти на этот ПК</button>
-        <button id="taskImport" hidden>Импорт задач</button>
+        <button id="syncConnect" hidden>Подключить GitHub</button>
+        <button id="useLocal" hidden>Режим устройства</button>
+        <button id="taskTransfer" hidden>Перенести задачи с устройства</button>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <button id="taskImport">Импорт задач</button>
+        <button id="taskExport">Скачать задачи</button>
       </div>
       <input type="file" id="taskImportFile" accept=".json,application/json" multiple hidden>
-      <p class="hint" id="taskImportHint" hidden>Выберите backlog.json и/или stale.json. Существующие задачи сохранятся.</p>
+      <p class="hint">Для импорта подойдёт скачанный файл задач, backlog.json или stale.json. Совпадающие карточки останутся как в текущем списке.</p>
       <div class="status" id="storageStatus" role="status"></div>
     </div>
     <details class="card" id="githubSettings">
@@ -608,11 +613,12 @@
     <label for="owner">Владелец на GitHub</label>
     <input type="text" id="owner" placeholder="например barakshina" autocomplete="off" autocapitalize="none" spellcheck="false">
 
-    <label for="token">Токен (fine-grained PAT)</label>
+    <label for="token">Ключ доступа GitHub (fine-grained PAT)</label>
     <input type="password" id="token" placeholder="github_pat_..." autocomplete="off" autocapitalize="none" spellcheck="false">
+    <p class="hint"><a href="https://github.com/settings/personal-access-tokens/new?name=Planner%20sync&amp;contents=write" target="_blank" rel="noopener noreferrer">Создать ключ GitHub</a> · Выберите репозиторий <b>planner-data</b> и доступ <b>Contents: Read and write</b>.</p>
     <div class="row" style="margin-top:10px">
       <button id="toggleToken">Показать</button>
-      <button id="check">Подключить и проверить</button>
+      <button id="check">Проверить подключение</button>
     </div>
     <div class="status" id="settingsStatus" role="status"></div>
 
@@ -645,8 +651,7 @@
     </div>
 
     <div class="hint" style="margin-top:18px">
-      Токен нужен с доступом к репозиториям <b>planner-data</b> и <b>diary</b>,
-      права <b>Contents: Read and write</b>, а для кнопок прогонов ещё <b>Actions: Read and write</b>. Он лежит только в этом браузере.
+      Для дневника добавьте доступ к <b>diary</b>, а для кнопок ИИ — право <b>Actions: Read and write</b>. Ключ сохраняется в этом браузере.
     </div>
     </details>
   </section>
@@ -737,6 +742,7 @@
   function switchStorage(mode) {
     try {
       localStorage.setItem(LS.mode, mode);
+      if (mode === 'github') set('planner.showSyncSettings', 'yes');
       location.reload();
     } catch (err) {
       status($('storageStatus'), 'Браузер не дал сохранить выбор хранилища.', 'err');
@@ -827,7 +833,7 @@
     opts = opts || {};
     var filePath = /^\/repos\/[^/]*\/(planner-data|diary)\/contents\/(.+)$/.exec(path);
     if (localMode && filePath) return localFileRequest(filePath[1] + '/' + filePath[2], opts);
-    var token = get(LS.token, '');
+    var token = opts.token || get(LS.token, '');
     if (!token) {
       return Promise.reject(new ApiError('Для подключения GitHub введите токен в настройках.', 0, 'notoken'));
     }
@@ -1071,6 +1077,8 @@
   var lastToday = mskToday();
   var planRequest = 0;
   var allRequest = 0;
+  var staleRequest = 0;
+  var taskViewSnapshots = {};
   var taskDraft = null;
   var openChecklists = new Set();
 
@@ -1625,13 +1633,36 @@
     });
   }
 
-  function loadPlan(quiet) {
+  function taskViewReady(name) {
+    var view = $('view-' + name);
+    var activity = $(name + 'Status').textContent;
+    return !view.hidden && !$('taskDialog').open &&
+      !view.querySelector('.nextform:not([hidden]), details[open] .note') &&
+      !/^(Сохраняю|Загружаю|Убираю|Добавляю)/.test(activity);
+  }
+
+  function paintTaskView(name, data, background, render) {
+    if (background && !taskViewReady(name)) return;
+    var snapshot = JSON.stringify(data);
+    if (background && taskViewSnapshots[name] === snapshot) return;
+    taskViewSnapshots[name] = snapshot;
+    render();
+    status($(name + 'Status'), '', '');
+  }
+
+  function taskViewError(name, err, background) {
+    if (!background || (taskViewReady(name) && (err.status === 401 || err.status === 403 || err.kind === 'notoken'))) {
+      status($(name + 'Status'), err.message, 'err');
+    }
+  }
+
+  function loadPlan(quiet, background) {
     var picker = $('planDay');
     var today = mskToday();
     var date = picker.value;
     if (!date || date === lastToday) date = today;
     lastToday = today;
-    picker.value = date;
+    if (picker.value !== date) picker.value = date;
     var request = ++planRequest;
     if (!quiet) {
       $('planBody').textContent = '';
@@ -1639,17 +1670,17 @@
     }
     return readDay(date).then(function (data) {
       if (request !== planRequest) return;
-      renderPlan(data.plan);
-      status($('planStatus'), '', '');
+      paintTaskView('plan', data.plan, background, function () { renderPlan(data.plan); });
     }).catch(function (err) {
-      if (request === planRequest) status($('planStatus'), err.message, 'err');
+      if (request === planRequest) taskViewError('plan', err, background);
     });
   }
 
-  function refreshTaskViews() {
+  function refreshTaskViews(background) {
     var jobs = [];
-    if (!$('view-plan').hidden) jobs.push(loadPlan(true));
-    if (!$('view-all').hidden) jobs.push(loadAll(true));
+    if (!$('view-plan').hidden && (!background || taskViewReady('plan'))) jobs.push(loadPlan(true, background));
+    if (!$('view-all').hidden && (!background || taskViewReady('all'))) jobs.push(loadAll(true, background));
+    if (!$('view-stale').hidden && (!background || taskViewReady('stale'))) jobs.push(loadStale(true, background));
     return Promise.all(jobs);
   }
 
@@ -1779,15 +1810,14 @@
     });
   }
 
-  function loadAll(quiet) {
+  function loadAll(quiet, background) {
     var request = ++allRequest;
     if (!quiet) status($('allStatus'), 'Загружаю…', '');
     return readDay(mskToday()).then(function (data) {
       if (request !== allRequest) return;
-      renderAll(data.backlog, data.plan);
-      status($('allStatus'), '', '');
+      paintTaskView('all', data, background, function () { renderAll(data.backlog, data.plan); });
     }).catch(function (err) {
-      if (request === allRequest) status($('allStatus'), err.message, 'err');
+      if (request === allRequest) taskViewError('all', err, background);
     });
   }
 
@@ -1983,18 +2013,14 @@
     });
   }
 
-  function loadStale(quiet) {
+  function loadStale(quiet, background) {
+    var request = ++staleRequest;
     if (!quiet) status($('staleStatus'), 'Загружаю...', '');
-    return getJson(REPO_DATA, 'stale.json').then(function (f) {
-      renderStale(f.json);
-      status($('staleStatus'), '', '');
+    return readPlannerJson('stale.json').then(function (data) {
+      if (request !== staleRequest) return;
+      paintTaskView('stale', data, background, function () { renderStale(data); });
     }).catch(function (err) {
-      if (err.status === 404) {
-        renderStale(null);
-        status($('staleStatus'), '', '');
-        return;
-      }
-      status($('staleStatus'), err.message, 'err');
+      if (request === staleRequest) taskViewError('stale', err, background);
     });
   }
 
@@ -2318,9 +2344,8 @@
 
   // Права на Actions отдельные от Contents, и без них кнопки прогона отвечают
   // отказом. Проверяем заранее, а не в момент, когда прогон понадобился.
-  function checkActions(cell) {
-    var owner = get(LS.owner, '').trim();
-    return api('/repos/' + owner + '/' + REPO_DATA + '/actions/workflows?per_page=1')
+  function checkActions(cell, auth) {
+    return api('/repos/' + auth.owner + '/' + REPO_DATA + '/actions/workflows?per_page=1', auth)
       .then(function () {
         cell.textContent = 'доступен';
         cell.style.color = 'var(--accent)';
@@ -2334,15 +2359,19 @@
       });
   }
 
-  function checkRepo(repo, cell) {
-    var owner = get(LS.owner, '').trim();
-    return api('/repos/' + owner + '/' + repo).then(function (r) {
+  function checkRepo(repo, cell, auth) {
+    var path = '/repos/' + auth.owner + '/' + repo;
+    return api(path, auth).then(function (r) {
       // Видеть репозиторий и мочь в него писать это разные права, и разницу
       // видно только здесь: 403 при записи иначе всплывёт в самый неудобный момент.
       var write = !!(r.data && r.data.permissions && r.data.permissions.push);
-      cell.textContent = write ? 'чтение и запись' : 'только чтение';
-      cell.style.color = write ? 'var(--accent)' : 'var(--warn)';
-      return write;
+      return api(path + '/contents', auth).catch(function (err) {
+        if (err.status !== 404 || (r.data && r.data.size)) throw err;
+      }).then(function () {
+        cell.textContent = write ? 'доступ есть' : 'только чтение';
+        cell.style.color = write ? 'var(--accent)' : 'var(--warn)';
+        return write;
+      });
     }).catch(function (err) {
       cell.textContent = err.status === 404 ? 'не виден' : 'ошибка ' + err.status;
       cell.style.color = 'var(--err)';
@@ -2352,77 +2381,75 @@
 
   function check() {
     var st = $('settingsStatus');
-    set(LS.token, $('token').value.trim());
-    set(LS.owner, $('owner').value.trim());
+    var auth = { owner: $('owner').value.trim(), token: $('token').value.trim() };
+    if (!auth.token) {
+      status(st, 'Вставьте ключ GitHub, чтобы подключить общий список.', 'warn');
+      $('token').focus();
+      return;
+    }
+    $('check').disabled = true;
     status(st, 'Проверяю...', '');
 
     // GET /user некоторым fine-grained токенам недоступен, это не повод считать токен плохим:
     // при ошибке кроме 401 просто идём дальше и проверяем сами репозитории.
-    api('/user').catch(function (err) {
+    return api('/user', auth).catch(function (err) {
       if (err.kind === 'auth' || err.kind === 'network' || err.kind === 'notoken') throw err;
       return { data: null };
     }).then(function (r) {
       $('tokenCard').hidden = false;
       $('kvLogin').textContent = (r.data && r.data.login) || 'не показан';
-      if (!get(LS.owner, '').trim() && r.data && r.data.login) {
-        set(LS.owner, r.data.login);
-        $('owner').value = r.data.login;
-      }
+      if (!auth.owner && r.data && r.data.login) auth.owner = r.data.login;
       $('kvExp').textContent = fmtExp(get(LS.exp, ''));
-      if (!get(LS.owner, '').trim()) {
+      if (!auth.owner) {
         throw new ApiError('Заполните поле «Владелец на GitHub».', 0, 'noowner');
       }
       return Promise.all([
-        checkRepo(REPO_DATA, $('kvData')),
-        checkRepo(REPO_DIARY, $('kvDiary')),
-        checkActions($('kvActions'))
+        checkRepo(REPO_DATA, $('kvData'), auth),
+        checkRepo(REPO_DIARY, $('kvDiary'), auth),
+        checkActions($('kvActions'), auth)
       ]);
     }).then(function (res) {
       $('kvExp').textContent = fmtExp(get(LS.exp, ''));
       $('kvStore').textContent = storagePinned === null ? 'не ответил' : (storagePinned ? 'закреплено' : 'может очиститься');
       $('kvStore').style.color = storagePinned ? 'var(--accent)' : 'var(--warn)';
-      if (res[0] && res[1] && res[2]) status(st, 'Токен рабочий: запись в оба репозитория и запуск прогонов.', 'ok');
-      else if (res[0] && res[1]) status(st, 'Записывать можно, но кнопки прогона работать не будут: токену не выдано право Actions.', 'warn');
-      else status(st, 'Токен принят, но не всё доступно. Смотрите строки ниже.', 'warn');
-      if (res[0] && localMode) switchStorage('github');
-      else flush(true);
+      if (!res[0]) {
+        status(st, 'Общий список недоступен. Проверьте доступ к planner-data и права Contents: Read and write.', 'err');
+        return;
+      }
+      localStorage.setItem(LS.token, auth.token);
+      localStorage.setItem(LS.owner, auth.owner);
+      $('owner').value = auth.owner;
+      $('savedAccess').hidden = false;
+      status(st, 'GitHub подключён. Задачи сохраняются в общем списке.', 'ok');
+      if (localMode) switchStorage('github');
+      else { flush(true); refreshTaskViews(); }
     }).catch(function (err) {
       status(st, err.message, 'err');
+    }).finally(function () { $('check').disabled = false; });
+  }
+
+  function readTaskLists(readJson) {
+    return Promise.all([readJson('backlog.json'), readJson('stale.json')]).then(function (files) {
+      return { tasks: (files[0] && files[0].tasks) || [], items: (files[1] && files[1].items) || [] };
     });
   }
 
-  function importTaskFiles(files) {
-    var st = $('storageStatus');
-    if (!localMode || !files.length) return;
-    $('taskImport').disabled = true;
-    status(st, 'Читаю файлы…', '');
-    var incoming = { tasks: [], items: [] };
-    return Promise.all(files.map(function (file) {
-      return file.text().then(function (text) {
-        var parsed = JSON.parse(text.replace(/^\uFEFF/, ''));
-        var key = parsed && Array.isArray(parsed.tasks) ? 'tasks' : 'items';
-        if (!parsed || !Array.isArray(parsed[key]) || parsed[key].some(function (item) {
-          return !item || typeof item.id !== 'string' || !item.id.trim() || typeof item.title !== 'string' || !item.title.trim() ||
-            (item.due != null && typeof item.due !== 'string') ||
-            (item.scheduled_date != null && typeof item.scheduled_date !== 'string') ||
-            (item.not_before != null && typeof item.not_before !== 'string') ||
-            (item.subtasks != null && (!Array.isArray(item.subtasks) || item.subtasks.some(function (step) {
-              return !step || typeof step.id !== 'string' || !step.id.trim() || typeof step.title !== 'string' || !step.title.trim();
-            })));
-        })) throw new Error('Проверьте формат файла «' + file.name + '».');
-        return { key: key, rows: parsed[key] };
-      }).catch(function (err) {
-        throw new Error('Не удалось прочитать «' + file.name + '». ' + err.message);
-      });
-    })).then(function (groups) {
-      groups.forEach(function (group) { incoming[group.key] = incoming[group.key].concat(group.rows); });
-      return Promise.all([readPlannerJson('backlog.json'), readPlannerJson('stale.json')]);
-    }).then(function (current) {
-      var known = new Set(((current[0] && current[0].tasks) || []).concat((current[1] && current[1].items) || []).map(function (item) { return item.id; }));
-      var added = 0;
+  function readDeviceJson(path) {
+    return localFileRequest(REPO_DATA + '/' + path, {}).then(function (r) {
+      return JSON.parse(fromB64(r.data.content));
+    }).catch(function (err) {
+      if (err.status === 404) return null;
+      throw err;
+    });
+  }
+
+  function mergeTaskLists(incoming) {
+    return readTaskLists(readPlannerJson).then(function (current) {
+      var known = new Set(current.tasks.concat(current.items).map(function (item) { return item.id; }));
+      var total = { added: 0, existing: 0 };
       function merge(path, key) {
         var fresh = incoming[key].filter(function (item) {
-          if (known.has(item.id)) return false;
+          if (known.has(item.id)) { total.existing++; return false; }
           known.add(item.id);
           return true;
         });
@@ -2436,14 +2463,88 @@
           if (!count) return null;
           data[key] = rows.concat(additions);
           return data;
-        }, 'импорт задач').then(function () { added += count; });
+        }, 'импорт задач').then(function () {
+          total.added += count;
+          total.existing += fresh.length - count;
+        });
       }
-      return merge('backlog.json', 'tasks').then(function () { return merge('stale.json', 'items'); }).then(function () {
-        status(st, added ? 'Добавлено задач: ' + added + '.' : 'Новых задач в этих файлах нет.', 'ok');
+      return merge('backlog.json', 'tasks').then(function () { return merge('stale.json', 'items'); }).then(function () { return total; });
+    });
+  }
+
+  function readTaskBackup(file) {
+    return file.text().then(function (text) {
+      var parsed = JSON.parse(text.replace(/^\uFEFF/, ''));
+      if (!parsed || (!Array.isArray(parsed.tasks) && !Array.isArray(parsed.items))) throw new Error('Некорректный формат.');
+      var lists = { tasks: parsed.tasks || [], items: parsed.items || [] };
+      if (Object.values(lists).some(function (rows) {
+        return !Array.isArray(rows) || rows.some(function (item) {
+          return !item || typeof item.id !== 'string' || !item.id.trim() || typeof item.title !== 'string' || !item.title.trim() ||
+            (item.due != null && typeof item.due !== 'string') ||
+            (item.scheduled_date != null && typeof item.scheduled_date !== 'string') ||
+            (item.not_before != null && typeof item.not_before !== 'string') ||
+            (item.subtasks != null && (!Array.isArray(item.subtasks) || item.subtasks.some(function (step) {
+              return !step || typeof step.id !== 'string' || !step.id.trim() || typeof step.title !== 'string' || !step.title.trim();
+            })));
+        });
+      })) throw new Error('Некорректный формат.');
+      return lists;
+    }).catch(function (err) {
+      throw new Error('Не удалось прочитать «' + file.name + '». ' + err.message);
+    });
+  }
+
+  function runTaskImport(button, read) {
+    var st = $('storageStatus');
+    if ($('taskImport').disabled || $('taskTransfer').disabled) return;
+    button.disabled = true;
+    status(st, 'Переношу задачи…', '');
+    return read().then(mergeTaskLists).then(function (total) {
+      var message = total.added ? 'Добавлено задач: ' + total.added + '.' : 'Новых задач нет.';
+      if (total.existing) message += ' Уже в списке: ' + total.existing + '.';
+      status(st, message, 'ok');
+    }).catch(function (err) {
+      status(st, err.message + ' Можно повторить перенос.', 'err');
+    }).finally(function () { button.disabled = false; });
+  }
+
+  function importTaskFiles(files) {
+    if (!files.length) return;
+    return runTaskImport($('taskImport'), function () {
+      return Promise.all(files.map(readTaskBackup)).then(function (lists) {
+        return {
+          tasks: lists.flatMap(function (list) { return list.tasks; }),
+          items: lists.flatMap(function (list) { return list.items; })
+        };
       });
+    });
+  }
+
+  function showDeviceTransfer() {
+    if (localMode) return;
+    readTaskLists(readDeviceJson).then(function (lists) {
+      $('taskTransfer').hidden = !lists.tasks.length && !lists.items.length;
+    }).catch(function () { $('taskTransfer').hidden = true; });
+  }
+
+  function exportTasks() {
+    var st = $('storageStatus');
+    $('taskExport').disabled = true;
+    status(st, 'Готовлю файл…', '');
+    return readTaskLists(readPlannerJson).then(function (lists) {
+      var file = new Blob([JSON.stringify(lists, null, 2) + '\n'], { type: 'application/json' });
+      var url = URL.createObjectURL(file);
+      var link = el('a');
+      link.href = url;
+      link.download = 'planner-tasks-' + mskToday() + '.json';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+      status(st, 'Файл задач готов.', 'ok');
     }).catch(function (err) {
       status(st, err.message, 'err');
-    }).then(function () { $('taskImport').disabled = false; });
+    }).finally(function () { $('taskExport').disabled = false; });
   }
 
   /* ---------- фотографии ---------- */
@@ -3457,7 +3558,7 @@
     if (name === 'diary') { renderDQueue(); dFlush(true); loadDiary(null, false); }
     if (name === 'notes') loadNotes(false);
     if (name === 'events') loadEvents(false);
-    if (name === 'settings' && !localMode) loadState();
+    if (name === 'settings' && !localMode) { showDeviceTransfer(); loadState(); }
   }
 
   /* ---------- запуск ---------- */
@@ -3466,6 +3567,15 @@
   $('retry').addEventListener('click', function () { flush(false); });
   $('check').addEventListener('click', check);
   $('useLocal').addEventListener('click', function () { switchStorage('local'); });
+  $('storageLabel').addEventListener('click', function () { showTab('settings'); });
+  $('syncConnect').addEventListener('click', function () {
+    $('githubSettings').open = true;
+    $('token').focus();
+  });
+  $('taskTransfer').addEventListener('click', function () {
+    if (!localMode) runTaskImport(this, function () { return readTaskLists(readDeviceJson); });
+  });
+  $('taskExport').addEventListener('click', exportTasks);
   $('taskImport').addEventListener('click', function () { $('taskImportFile').click(); });
   $('taskImportFile').addEventListener('change', function () {
     var files = Array.from(this.files);
@@ -3588,14 +3698,17 @@
     if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); submit(); }
   });
 
-  window.addEventListener('online', function () { flush(true); dFlush(true); });
+  window.addEventListener('online', function () { flush(true); dFlush(true); refreshTaskViews(true); });
+  if (!localMode) setInterval(function () {
+    if (document.visibilityState === 'visible' && navigator.onLine) refreshTaskViews(true);
+  }, 45000);
   document.addEventListener('visibilitychange', function () {
     if (document.visibilityState !== 'visible') return;
     flush(true);
     dFlush(true);
     // Приложение с домашнего экрана живёт в памяти днями. Без этого на экране
     // остаётся вчерашний план, и отметки уходят в пустоту.
-    refreshTaskViews();
+    refreshTaskViews(true);
   });
 
   // Safari вычищает хранилище сайта, если приложение неделю не открывали, и токен
@@ -3614,20 +3727,21 @@
   if (!get(LS.owner, '')) set(LS.owner, DEFAULT_OWNER);
   $('owner').value = get(LS.owner, DEFAULT_OWNER);
   $('token').value = get(LS.token, '');
-  $('storageLabel').textContent = localMode ? 'На этом ПК' : 'GitHub';
+  $('storageLabel').textContent = localMode ? 'На устройстве' : 'GitHub';
   $('storageDescription').textContent = localMode
-    ? 'Данные сохраняются в этом браузере. Можно сразу добавлять дела.'
-    : 'Данные сохраняются в GitHub. На этом ПК также можно вести отдельный список.';
+    ? 'Задачи сейчас хранятся в этом браузере. Для общего списка подключите GitHub на компьютере и телефоне.'
+    : 'Задачи сохраняются в GitHub. Подключите того же владельца на другом устройстве, чтобы открыть общий список.';
+  $('syncConnect').hidden = !localMode;
   $('useLocal').hidden = localMode;
-  $('taskImport').hidden = !localMode;
-  $('taskImportHint').hidden = !localMode;
   $('githubSettings').open = !localMode;
   $('aiCard').hidden = localMode;
   $('savedAccess').hidden = !get(LS.token, '');
   $('runEvents').hidden = localMode;
   if (localMode) $('send').textContent = 'Сохранить';
   renderQueue();
-  showTab('plan');
+  var showSyncSettings = !localMode && get('planner.showSyncSettings', '') === 'yes';
+  del('planner.showSyncSettings');
+  showTab(showSyncSettings ? 'settings' : 'plan');
   flush(true);
   dFlush(true);
 })();
