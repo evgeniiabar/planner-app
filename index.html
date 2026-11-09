@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#fbfaff">
+<meta name="theme-color" content="#fff9ed">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
@@ -35,31 +35,32 @@
      цветом. Утро абрикосовое, день синий, вечер сиреневый, и по полоске у
      задачи сразу видно, к какой части дня она относится. */
   :root {
-    --bg: #fbfaff;
-    --panel: #ffffff;
-    --panel-2: #f3f0fd;
-    --line: #e5e1f3;
-    --text: #241f33;
-    --dim: #6f6891;
-    --accent: #6a3fe0;
+    --bg: #fff9ed;
+    --panel: #fffdf8;
+    --panel-2: #f5efdf;
+    --line: #e9dfcd;
+    --text: #282b27;
+    --dim: #625f52;
+    --accent: #346653;
     --accent-ink: #ffffff;
-    --accent-soft: #efeaff;
+    --accent-soft: #e4f1e5;
     --warn: #a35a06;
     --warn-soft: #fff1da;
     --warn-line: #f0d5ab;
     --err: #c62742;
     --err-soft: #ffe7ec;
     --err-line: #f4c2cc;
-    --shadow: 0 1px 2px rgba(36, 31, 51, .06);
+    --shadow: 0 3px 0 rgb(96 78 48 / .08);
 
     --m-ink: #8f4710;  --m-bg: #fff6ec;  --m-line: #ffb467;
-    --d-ink: #1b5583;  --d-bg: #eff7ff;  --d-line: #64b1f0;
+    --d-ink: #2c5d47;  --d-bg: #edf7ec;  --d-line: #82b594;
     --e-ink: #45308a;  --e-bg: #f5f1ff;  --e-line: #9b7cf0;
 
     --font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
     --font-display: "Comfortaa", system-ui, sans-serif;
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  [hidden] { display: none !important; }
   html, body { height: 100%; }
   body {
     margin: 0;
@@ -79,7 +80,10 @@
     border-bottom: 1px solid var(--line);
     background: var(--bg);
   }
-  header h1 { font-family: var(--font-display); font-size: 17px; font-weight: 700; margin: 0; }
+  header h1 { font-size: 20px; font-weight: 750; margin: 0; }
+  .header-name { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .header-mascot { border-radius: 8px; flex: 0 0 auto; }
+  .storage-label { color: var(--accent); background: var(--accent-soft); border-radius: 999px; padding: 4px 9px; font-size: 12px; white-space: nowrap; }
   .badge {
     font-size: 13px;
     color: var(--warn);
@@ -89,8 +93,24 @@
     padding: 3px 10px;
   }
   .badge[hidden] { display: none; }
-  main { flex: 1; overflow-y: auto; padding: 16px; }
+  main { flex: 1; overflow-y: auto; padding: clamp(12px, 3vw, 28px); }
+  .view { width: min(100%, 770px); margin-inline: auto; }
   .view[hidden] { display: none; }
+  .welcome {
+    position: relative; overflow: hidden; isolation: isolate;
+    border: 1px solid var(--line); border-radius: 22px; padding: clamp(15px, 4vw, 27px);
+    background: #f8e8b9; color: #423521; margin-bottom: 16px; box-shadow: var(--shadow);
+  }
+  .welcome::after {
+    content: '✿'; position: absolute; z-index: -1; right: 2%; top: -48%;
+    color: #efcb76; font-size: clamp(112px, 25vw, 185px); transform: rotate(-15deg); line-height: 1.4;
+  }
+  .welcome.shelf { background: #eee5fa; color: #423454; }
+  .welcome.shelf::after { content: '✦'; color: #d6c3ee; }
+  .welcome h2 { font-size: clamp(23px, 5vw, 32px); line-height: 1.15; margin: 0 0 7px; }
+  .welcome p { margin: 0; }
+  button.add-task { color: var(--accent-ink); background: var(--accent); border-color: var(--accent); font-weight: 700; }
+  .mode-card { margin-top: 0; }
 
   textarea {
     width: 100%;
@@ -129,15 +149,6 @@
   button:disabled { opacity: .5; }
   button.danger { color: var(--err); background: var(--err-soft); border-color: var(--err-line); }
 
-  .check {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    font-size: 14px;
-    padding: 8px 0;
-    cursor: pointer;
-  }
-  .check input { width: 20px; height: 20px; accent-color: var(--accent); }
   .entry {
     border-top: 1px solid var(--line);
     padding: 14px 0;
@@ -214,6 +225,26 @@
     font: inherit;
     min-height: 48px;
   }
+  .task-date {
+    min-width: 0; min-height: 48px; padding: 8px; font: inherit;
+    border: 1px solid var(--line); border-radius: 12px;
+    background: var(--panel-2); color: var(--text);
+  }
+  .plan-tools { align-items: center; margin-bottom: 12px; }
+  .plan-tools > button { flex: 0 0 auto; }
+  .task-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(135px, 1fr)); gap: 8px; }
+  .task-fields input, .task-fields select { width: 100%; }
+  .task-dialog {
+    width: min(470px, calc(100% - 24px)); max-height: calc(100% - 32px); padding: 18px;
+    border: 1px solid var(--line); border-radius: 16px; background: var(--panel); color: var(--text);
+  }
+  .task-dialog::backdrop { background: rgb(36 31 51 / .45); }
+  .task-dialog h2 { margin: 0 0 12px; font-size: 18px; }
+  .task-shortcuts { margin-top: 10px; }
+  .task-shortcuts button { min-height: 38px; padding: 5px 9px; font-size: 13px; }
+  .task-actions { margin-top: 10px; }
+  .task-history { margin-top: 16px; }
+  .task-history summary { cursor: pointer; color: var(--dim); }
   label { display: block; font-size: 13px; color: var(--dim); margin: 16px 0 6px; }
 
   .status { min-height: 22px; margin-top: 10px; font-size: 14px; color: var(--dim); }
@@ -359,12 +390,14 @@
 
   nav {
     display: flex;
+    justify-content: center;
     border-top: 1px solid var(--line);
     background: var(--bg);
     padding-bottom: env(safe-area-inset-bottom);
   }
   nav button {
     flex: 1;
+    max-width: 110px;
     border: 0;
     background: transparent;
     color: var(--dim);
@@ -376,14 +409,16 @@
     min-width: 0;
   }
   nav button { font-weight: 500; }
-  nav button[aria-selected="true"] { color: var(--accent); font-weight: 700; box-shadow: inset 0 2px 0 var(--accent); }
+  nav button[aria-selected="true"] { color: var(--accent); background: var(--accent-soft); font-weight: 750; box-shadow: inset 0 2px 0 var(--accent); }
+  @media (min-width: 600px) { nav button { font-size: 13px; } }
 </style>
 </head>
 <body>
 
 <header>
-  <h1 id="title">Инбокс</h1>
+  <div class="header-name"><img class="header-mascot" src="icons/planner-frog.svg" width="30" height="30" alt=""><h1 id="title">План</h1></div>
   <div style="display:flex;align-items:center;gap:8px">
+    <span class="storage-label" id="storageLabel"></span>
     <span class="badge" id="queueBadge" hidden></span>
     <button class="gear" id="gear" aria-label="Настройки">⚙</button>
   </div>
@@ -408,7 +443,7 @@
       <h2 id="pendingTitle">Ждут разбора</h2>
       <div id="pendingBody"></div>
       <div class="row" style="margin-top:12px">
-        <button id="runEveningInbox">Разобрать сейчас</button>
+        <button id="runEveningInbox">Разобрать с ИИ</button>
       </div>
       <div class="status" id="pendingStatus"></div>
       <div class="hint" id="pendingHint"></div>
@@ -416,34 +451,34 @@
   </section>
 
   <section class="view" id="view-plan" hidden>
-    <div id="planBody"></div>
-
-    <div class="card" id="planAddCard">
-      <h2>Добавить в план</h2>
-      <input type="text" id="planNew" placeholder="что сделать сегодня" autocomplete="off">
-      <div class="row" style="margin-top:10px">
-        <select id="planBlock" aria-label="Когда">
-          <option value="morning">Утро</option>
-          <option value="afternoon" selected>День</option>
-          <option value="evening">Вечер</option>
-        </select>
-        <button id="planAdd">Добавить</button>
-      </div>
-      <div class="hint">Задача попадёт в сегодняшний план и в общий список. Через ИИ не проходит.</div>
+    <div class="welcome"><h2>День в своём темпе</h2><p>Пара дел на сегодня — уже план.</p></div>
+    <div class="row plan-tools">
+      <button id="planPrev" aria-label="Предыдущий день">‹</button>
+      <input type="date" class="task-date" id="planDay" aria-label="День плана">
+      <button id="planNext" aria-label="Следующий день">›</button>
+      <button id="planToday">Сегодня</button>
     </div>
-    <div class="status" id="planStatus"></div>
+    <button class="add-task" id="planAdd">＋ Задача</button>
+    <div class="status" id="planStatus" role="status"></div>
+    <div id="planBody"></div>
     <div class="row" style="margin-top:16px"><button id="planReload">Обновить</button></div>
   </section>
 
   <section class="view" id="view-all" hidden>
+    <button class="add-task" id="allAdd">＋ Задача</button>
+    <div class="status" id="allStatus" role="status"></div>
     <div id="allBody"></div>
-    <div class="status" id="allStatus"></div>
     <div class="row" style="margin-top:16px"><button id="allReload">Обновить</button></div>
   </section>
 
   <section class="view" id="view-stale" hidden>
+    <div class="welcome shelf"><h2>Полка на потом</h2><p>Здесь можно оставить дело, вернуться к нему или отпустить.</p></div>
+    <div class="row">
+      <button class="add-task" id="staleAdd">＋ На полку</button>
+      <button id="staleClear" hidden>Всё в архив</button>
+    </div>
+    <div class="status" id="staleStatus" role="status"></div>
     <div id="staleBody"></div>
-    <div class="status" id="staleStatus"></div>
     <div class="row" style="margin-top:16px"><button id="staleReload">Обновить</button></div>
   </section>
 
@@ -534,12 +569,25 @@
     <div class="status" id="eventsStatus"></div>
     <div class="row" style="margin-top:12px">
       <button id="evReload">Обновить</button>
-      <button id="runEvents">Поискать сейчас</button>
+      <button id="runEvents">Поискать с ИИ</button>
     </div>
     <div class="hint" id="evHint"></div>
   </section>
 
   <section class="view" id="view-settings" hidden>
+    <div class="card mode-card">
+      <h2>Где лежат данные</h2>
+      <div id="storageDescription"></div>
+      <div class="row" style="margin-top:10px">
+        <button id="useLocal" hidden>Перейти на этот ПК</button>
+        <button id="taskImport" hidden>Импорт задач</button>
+      </div>
+      <input type="file" id="taskImportFile" accept=".json,application/json" multiple hidden>
+      <p class="hint" id="taskImportHint" hidden>Выберите backlog.json и/или stale.json. Существующие задачи сохранятся.</p>
+      <div class="status" id="storageStatus" role="status"></div>
+    </div>
+    <details class="card" id="githubSettings">
+    <summary>Подключение GitHub</summary>
     <label for="owner">Владелец на GitHub</label>
     <input type="text" id="owner" placeholder="например barakshina" autocomplete="off" autocapitalize="none" spellcheck="false">
 
@@ -547,9 +595,9 @@
     <input type="password" id="token" placeholder="github_pat_..." autocomplete="off" autocapitalize="none" spellcheck="false">
     <div class="row" style="margin-top:10px">
       <button id="toggleToken">Показать</button>
-      <button id="check">Проверить</button>
+      <button id="check">Подключить и проверить</button>
     </div>
-    <div class="status" id="settingsStatus"></div>
+    <div class="status" id="settingsStatus" role="status"></div>
 
     <div class="card" id="tokenCard" hidden>
       <h2>Токен</h2>
@@ -561,23 +609,20 @@
       <div class="kv"><span>Хранилище токена</span><span id="kvStore">-</span></div>
     </div>
 
-    <div class="card">
-      <h2>Прогоны</h2>
+    <div class="card" id="aiCard">
+      <h2>Ручные прогоны ИИ</h2>
       <div class="kv"><span>Утро</span><span id="kvMorning">-</span></div>
       <div class="kv"><span>Вечер</span><span id="kvEvening">-</span></div>
       <div class="row" style="margin-top:12px">
         <button id="runEvening">Разобрать инбокс</button>
         <button id="runMorning">Собрать план</button>
       </div>
-      <label class="check"><input type="checkbox" id="autoMorning"> Утренняя страховка: соберёт план, если ночью не вышло</label>
-      <label class="check"><input type="checkbox" id="autoEvening"> Ночной разбор инбокса и план на утро</label>
-      <label class="check"><input type="checkbox" id="autoEvents"> Поиск мероприятий по воскресеньям</label>
       <div class="status" id="runStatus"></div>
-      <div class="hint">Прогон занимает около минуты. Расписание работает само по себе, кнопки нужны, только когда ждать не хочется.</div>
+      <div class="hint">ИИ запускается по кнопкам.</div>
     </div>
 
-    <div class="card">
-      <h2>Опасное</h2>
+    <div class="card" id="savedAccess" hidden>
+      <h2>Сохранённый доступ</h2>
       <button class="danger" id="wipe" style="width:100%">Стереть токен</button>
       <div class="hint">Очередь неотправленных записей при этом сохраняется.</div>
     </div>
@@ -586,8 +631,45 @@
       Токен нужен с доступом к репозиториям <b>planner-data</b> и <b>diary</b>,
       права <b>Contents: Read and write</b>, а для кнопок прогонов ещё <b>Actions: Read and write</b>. Он лежит только в этом браузере.
     </div>
+    </details>
   </section>
 </main>
+
+<dialog class="task-dialog" id="taskDialog" aria-labelledby="taskHeading">
+  <form id="taskForm">
+    <h2 id="taskHeading">Новая задача</h2>
+    <label for="taskTitle">Что сделать</label>
+    <input type="text" id="taskTitle" autocomplete="off" required>
+    <div class="task-fields">
+      <div id="taskDayField">
+        <label for="taskDay">В план на</label>
+        <input type="date" class="task-date" id="taskDay">
+      </div>
+      <div>
+        <label for="taskDue">Крайний срок</label>
+        <input type="date" class="task-date" id="taskDue">
+      </div>
+    </div>
+    <div class="row task-shortcuts" id="taskShortcuts">
+      <button type="button" id="taskToday">Сегодня</button>
+      <button type="button" id="taskTomorrow">Завтра</button>
+      <button type="button" id="taskUnscheduled">Без даты плана</button>
+    </div>
+    <div id="taskBlockField">
+      <label for="taskBlock">Часть дня</label>
+      <select id="taskBlock">
+        <option value="morning">Утро</option>
+        <option value="afternoon" selected>День</option>
+        <option value="evening">Вечер</option>
+      </select>
+    </div>
+    <div id="taskFormStatus" class="status" role="status"></div>
+    <div class="row task-actions">
+      <button type="button" id="taskCancel">Отмена</button>
+      <button type="submit" id="taskSave">Сохранить</button>
+    </div>
+  </form>
+</dialog>
 
 <nav>
   <button data-tab="inbox" aria-selected="true">Инбокс</button>
@@ -607,6 +689,7 @@
   var LS = {
     token: 'planner.token',
     owner: 'planner.owner',
+    mode: 'planner.storage',
     queue: 'planner.queue',
     exp:   'planner.tokenExp'
   };
@@ -624,13 +707,28 @@
   function set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
   function del(k) { try { localStorage.removeItem(k); } catch (e) {} }
 
+  var localMode = get(LS.mode, '') === 'local' || !get(LS.token, '');
+  if (localMode && !get(LS.mode, '')) set(LS.mode, 'local');
+  var localDB;
+
+  function switchStorage(mode) {
+    try {
+      localStorage.setItem(LS.mode, mode);
+      location.reload();
+    } catch (err) {
+      status($('storageStatus'), 'Браузер не дал сохранить выбор хранилища.', 'err');
+    }
+  }
+
+  function queueKey(key) { return localMode ? key + '.local' : key; }
+
   function readQueue() {
     try {
-      var q = JSON.parse(get(LS.queue, '[]'));
+      var q = JSON.parse(get(queueKey(LS.queue), '[]'));
       return Array.isArray(q) ? q : [];
     } catch (e) { return []; }
   }
-  function writeQueue(q) { set(LS.queue, JSON.stringify(q)); }
+  function writeQueue(q) { set(queueKey(LS.queue), JSON.stringify(q)); }
 
   /* ---------- слой GitHub API ---------- */
 
@@ -649,11 +747,66 @@
     return btoa(bin);
   }
 
+  function openLocalFiles() {
+    if (!localDB) {
+      localDB = new Promise(function (resolve, reject) {
+        var request = indexedDB.open('planner-local', 1);
+        request.onupgradeneeded = function () { request.result.createObjectStore('files'); };
+        request.onsuccess = function () { resolve(request.result); };
+        request.onerror = function () { reject(request.error); };
+      }).catch(function () {
+        localDB = null;
+        throw new ApiError('Хранилище браузера недоступно.', 0, 'storage');
+      });
+    }
+    return localDB;
+  }
+
+  function localFileRequest(key, opts) {
+    var method = opts.method || 'GET';
+    return openLocalFiles().then(function (db) {
+      return new Promise(function (resolve, reject) {
+        var tx = db.transaction('files', method === 'GET' ? 'readonly' : 'readwrite');
+        var files = tx.objectStore('files');
+        var data, error;
+        tx.oncomplete = function () { error ? reject(error) : resolve({ data: data }); };
+        tx.onabort = function () { reject(new ApiError('Браузер не сохранил изменения.', 0, 'storage')); };
+        files.get(key).onsuccess = function (event) {
+          var existing = event.target.result;
+          if (method === 'GET') {
+            if (existing) { data = existing; return; }
+            var prefix = key + '/';
+            files.getAllKeys(IDBKeyRange.bound(prefix, prefix + '\uffff')).onsuccess = function (list) {
+              var names = list.target.result.map(function (path) { return path.slice(prefix.length); });
+              data = names.filter(function (name) { return !name.includes('/'); }).map(function (name) {
+                return { name: name, type: 'file' };
+              });
+              if (!names.length) error = new ApiError('Файл пока не создан.', 404, 'notfound');
+            };
+            return;
+          }
+          if (method === 'DELETE' && !existing) {
+            error = new ApiError('Файл уже удалён.', 404, 'notfound');
+          } else if ((existing && existing.sha) !== opts.body.sha) {
+            error = new ApiError('Данные изменились. Повторите попытку.', 409, 'conflict');
+          } else if (method === 'DELETE') {
+            files.delete(key);
+          } else {
+            data = { sha: Date.now().toString(36) + Math.random().toString(36).slice(2), content: opts.body.content };
+            files.put(data, key);
+          }
+        };
+      });
+    });
+  }
+
   function api(path, opts) {
     opts = opts || {};
+    var filePath = /^\/repos\/[^/]*\/(planner-data|diary)\/contents\/(.+)$/.exec(path);
+    if (localMode && filePath) return localFileRequest(filePath[1] + '/' + filePath[2], opts);
     var token = get(LS.token, '');
     if (!token) {
-      return Promise.reject(new ApiError('Токена в этом браузере нет. Бывает, что телефон стирает его сам, если приложение долго не открывали. Вставьте токен заново в настройках.', 0, 'notoken'));
+      return Promise.reject(new ApiError('Для подключения GitHub введите токен в настройках.', 0, 'notoken'));
     }
     var headers = {
       'Authorization': 'Bearer ' + token,
@@ -703,7 +856,7 @@
 
   function putFile(repo, path, text, message, sha) {
     var owner = get(LS.owner, '').trim();
-    if (!owner) return Promise.reject(new ApiError('Не задан владелец репозитория. Откройте настройки.', 0, 'noowner'));
+    if (!owner && !localMode) return Promise.reject(new ApiError('Не задан владелец репозитория. Откройте настройки.', 0, 'noowner'));
     var body = { message: message, content: b64(text) };
     if (sha) body.sha = sha;
     return api('/repos/' + owner + '/' + repo + '/contents/' + path, { method: 'PUT', body: body });
@@ -762,7 +915,7 @@
     if (flushing) return Promise.resolve();
     var q = readQueue();
     if (!q.length) { renderQueue(); return Promise.resolve(); }
-    if (!get(LS.token, '')) {
+    if (!localMode && !get(LS.token, '')) {
       if (!quiet) status($('inboxStatus'), 'Токен не задан, записи ждут в очереди.', 'warn');
       return Promise.resolve();
     }
@@ -830,7 +983,7 @@
 
   function getFile(repo, path) {
     var owner = get(LS.owner, '').trim();
-    if (!owner) return Promise.reject(new ApiError('Не задан владелец репозитория. Откройте настройки.', 0, 'noowner'));
+    if (!owner && !localMode) return Promise.reject(new ApiError('Не задан владелец репозитория. Откройте настройки.', 0, 'noowner'));
     return api('/repos/' + owner + '/' + repo + '/contents/' + path).then(function (r) {
       return { sha: r.data.sha, text: fromB64(r.data.content || '') };
     });
@@ -874,7 +1027,7 @@
       var next = mutate(JSON.parse(text || '{}'));
       return next ? JSON.stringify(next, null, 2) + '\n' : null;
     }, message).then(function (text) {
-      return JSON.parse(text);
+      return JSON.parse(text || '{}');
     });
   }
 
@@ -892,20 +1045,120 @@
   /* ---------- план ---------- */
 
   var BLOCK_TITLES = { morning: 'Утро', afternoon: 'День', evening: 'Вечер' };
-  var planCache = null;
+  var lastToday = mskToday();
+  var planRequest = 0;
+  var allRequest = 0;
+  var taskDraft = null;
+
+  function shiftPlanDay(day, amount) {
+    var date = new Date(day + 'T00:00:00Z');
+    date.setUTCDate(date.getUTCDate() + amount);
+    return date.toISOString().slice(0, 10);
+  }
+
+  function openTaskEditor(draft) {
+    taskDraft = draft;
+    $('taskHeading').textContent = draft.stale ? 'Дело на потом' : (draft.id ? 'Изменить задачу' : 'Новая задача');
+    $('taskTitle').value = draft.title || '';
+    $('taskDay').value = draft.day || '';
+    $('taskDue').value = draft.due || '';
+    $('taskBlock').value = BLOCK_TITLES[draft.block] ? draft.block : 'afternoon';
+    $('taskDayField').hidden = !!draft.stale;
+    $('taskShortcuts').hidden = !!draft.stale;
+    syncTaskBlock();
+    status($('taskFormStatus'), '', '');
+    $('taskDialog').showModal();
+    $('taskTitle').focus();
+  }
+
+  function syncTaskBlock() {
+    $('taskBlockField').hidden = !$('taskDay').value;
+  }
+
+  function editTask(t, day, statusId) {
+    openTaskEditor({
+      id: t.id, title: t.title, day: day, due: t.due,
+      block: t.scheduled_block || t.block || 'afternoon', statusId: statusId
+    });
+  }
+
+  function saveTask(values, draft) {
+    return updateJson(REPO_DATA, 'backlog.json', function (backlog) {
+      var tasks = backlog.tasks || (backlog.tasks = []);
+      var task;
+      if (draft.id) {
+        task = tasks.find(function (t) { return t.id === draft.id && t.status === 'open'; });
+        if (!task) throw new Error('Задача уже закрыта или перемещена. Обновите список.');
+      } else {
+        // Повторная отправка после сбоя при записи или переносе инбокса не создаёт дубль.
+        task = tasks.find(function (t) { return t.id === draft.newId || (draft.source && t.source === draft.source); });
+        if (task) return null;
+        draft.newId = draft.newId || newTaskId(tasks.map(function (t) { return t.id; }));
+        task = {
+          id: draft.newId, est_min: null, source: draft.source || null,
+          first_seen: mskToday(), carry_count: 0, last_carry_date: null,
+          last_planned_date: null, status: 'open', done_at: null
+        };
+        tasks.push(task);
+      }
+      var scheduleChanged = values.day !== (draft.day || null) || (values.day && values.block !== draft.block);
+      if (!draft.id || scheduleChanged) {
+        if (!values.day && (task.scheduled_date || draft.day)) task.unscheduled_at = new Date().toISOString();
+        if (values.day) delete task.unscheduled_at;
+        if (task.scheduled_date !== values.day) task.skipped_date = null;
+        task.scheduled_date = values.day;
+        task.scheduled_block = values.day ? values.block : null;
+      }
+      if (!draft.id || values.title !== draft.title) task.title = values.title;
+      if (!draft.id || values.due !== (draft.due || null)) task.due = values.due;
+      return backlog;
+    }, draft.id ? 'изменена задача ' + draft.id : 'задача вручную: ' + values.title);
+  }
+
+  function submitTask(e) {
+    e.preventDefault();
+    if ($('taskSave').disabled) return;
+    var draft = taskDraft;
+    var values = {
+      title: $('taskTitle').value.trim(), day: $('taskDay').value || null,
+      due: $('taskDue').value || null, block: $('taskBlock').value
+    };
+    if (!values.title) { $('taskTitle').focus(); return; }
+    $('taskSave').disabled = true;
+    $('taskCancel').disabled = true;
+    status($('taskFormStatus'), 'Сохраняю…', '');
+    var save = function () { return draft.stale ? saveStaleTask(values, draft) : saveTask(values, draft); };
+    var job = draft.source ? convertInboxTask(draft.source, save) : save();
+    job.then(function () {
+      $('taskDialog').close();
+      var refresh = draft.source ? loadPending(true) : (draft.stale ? loadStale(true) : refreshTaskViews());
+      return refresh.then(function () {
+        var message = draft.stale ? 'Дело на полке.' : 'Задача сохранена.';
+        if (values.day && !draft.source) message = 'Задача в плане на ' + ddmm(values.day) + '.';
+        if (draft.source) message += ' Запись перенесена в архив.';
+        status($(draft.statusId), message, 'ok');
+      });
+    }).catch(function (err) {
+      status($('taskFormStatus'), err.message, 'err');
+    }).then(function () {
+      $('taskSave').disabled = false;
+      $('taskCancel').disabled = false;
+    });
+  }
 
   function hhmm(iso) {
     var d = new Date(iso);
     return isNaN(d.getTime()) ? '' : d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
   }
 
-  function taskRow(t) {
+  function taskRow(t, day) {
     var cls = 'task' + (t.status === 'done' ? ' done' : (t.status === 'skipped' ? ' skipped' : ''));
     if (BLOCK_TITLES[t.block]) cls += ' blk-' + t.block;
     var row = el('div', cls);
 
     var box = el('button', 'box', t.status === 'done' ? '✓' : '');
-    box.setAttribute('aria-label', 'Отметить выполненной');
+    box.setAttribute('aria-label', t.status === 'done' ? 'Вернуть в работу' : 'Отметить выполненной');
+    box.disabled = day !== mskToday();
 
     var body = el('div', 'body');
     body.appendChild(el('div', 't', t.title));
@@ -913,29 +1166,38 @@
 
     var bits = [];
     if (t.est_min) bits.push(t.est_min + ' мин');
-    if (t.due) bits.push('до ' + t.due);
+    if (t.due) bits.push('срок ' + ddmm(t.due));
     if (t.carry_count || bits.length) {
       var meta = el('div', 'meta');
       if (t.carry_count) meta.appendChild(el('span', 'tag' + (t.carry_count >= 2 ? ' hot' : ''), 'перенос ' + t.carry_count));
-      meta.appendChild(document.createTextNode(bits.join(' · ')));
+      if (bits.length) meta.appendChild(el('span', t.due && t.due < mskToday() && t.status !== 'done' ? 'tag hot' : null, bits.join(' · ')));
       body.appendChild(meta);
     }
 
     var skip = el('button', 'skip', t.status === 'skipped' ? '↺' : '✕');
     skip.setAttribute('aria-label', t.status === 'skipped' ? 'Вернуть в работу' : 'Пропустить сегодня');
+    skip.hidden = day !== mskToday() || t.status === 'done';
 
     box.addEventListener('click', function () {
-      setTaskStatus(t.id, t.status === 'done' ? 'todo' : 'done');
+      setTaskStatus(t.id, t.status === 'done' ? 'todo' : 'done', day, !t.shared, 'planStatus', row);
     });
     skip.addEventListener('click', function () {
-      setTaskStatus(t.id, t.status === 'skipped' ? 'todo' : 'skipped');
+      setTaskStatus(t.id, t.status === 'skipped' ? 'todo' : 'skipped', day, !t.shared, 'planStatus', row);
     });
 
     row.appendChild(box);
     row.appendChild(body);
     row.appendChild(skip);
 
-    if (t.status !== 'done') return row;
+    if (t.status !== 'done') {
+      if (t.shared) {
+        var edit = el('button', 'nextbtn', 'Изменить');
+        edit.addEventListener('click', function () { editTask(t, day, 'planStatus'); });
+        body.appendChild(edit);
+      }
+      return row;
+    }
+    if (day !== mskToday()) return row;
     // Сделанное часто тянет за собой следующее, и дату следующего шага узнаёшь
     // ровно в этот момент: записала на 18-е, значит звонить после 18-го.
     var wrap = el('div', 'taskwrap');
@@ -1065,17 +1327,12 @@
     var body = $('planBody');
     body.textContent = '';
 
-    if (!plan) {
-      body.appendChild(el('div', 'empty', 'Плана на сегодня ещё нет. Он собирается ночью, сразу после разбора инбокса, а если ночью не вышло, то утренним прогоном.'));
-      return;
-    }
-
     if (plan.focus) body.appendChild(el('div', 'focus', plan.focus));
-    body.appendChild(el('div', 'meta', 'план на ' + plan.date + ', собран в ' + hhmm(plan.generated_at)));
+    if (plan.generated_at) body.appendChild(el('div', 'meta', 'ИИ собрал план в ' + hhmm(plan.generated_at)));
 
     if (plan.events && plan.events.length) {
       var evCard = el('div', 'card');
-      evCard.appendChild(el('h2', null, 'Сегодня'));
+      evCard.appendChild(el('h2', null, 'Встречи'));
       plan.events.forEach(function (ev) {
         var row = el('div', 'event');
         row.appendChild(el('b', null, ev.start || '--:--'));
@@ -1087,13 +1344,13 @@
 
     var tasks = plan.tasks || [];
     if (!tasks.length) {
-      body.appendChild(el('div', 'empty', 'Задач на сегодня нет.'));
+      body.appendChild(el('div', 'empty', 'На этот день задач нет. Нажмите «＋ Задача», чтобы запланировать дело.'));
     } else {
       ['morning', 'afternoon', 'evening'].forEach(function (block) {
         var inBlock = tasks.filter(function (t) { return t.block === block; });
         if (!inBlock.length) return;
         body.appendChild(el('div', 'block-title blk-' + block, BLOCK_TITLES[block]));
-        inBlock.forEach(function (t) { body.appendChild(taskRow(t)); });
+        inBlock.forEach(function (t) { body.appendChild(taskRow(t, plan.date)); });
       });
     }
 
@@ -1117,262 +1374,253 @@
     }
   }
 
-  function setTaskStatus(id, next) {
-    var at = next === 'done' ? new Date().toISOString() : null;
+  function matchesPlan(task, date, storedPlan) {
+    if (task.scheduled_date) return task.scheduled_date === date;
+    return !task.unscheduled_at || Date.parse(task.unscheduled_at) < Date.parse(storedPlan.generated_at);
+  }
 
-    // Сначала интерфейс, чтобы тап отзывался мгновенно.
-    if (planCache) {
-      (planCache.tasks || []).forEach(function (t) {
-        if (t.id === id) { t.status = next; t.done_at = at; }
-      });
-      renderPlan(planCache);
+  function mergeDayPlan(date, backlog, storedPlan) {
+    var plan = Object.assign({}, storedPlan, { date: date, tasks: [] });
+    var tasks = (backlog && backlog.tasks) || [];
+    var byId = new Map(tasks.map(function (t) { return [t.id, t]; }));
+    var storedRows = (storedPlan && storedPlan.tasks) || [];
+    var shown = new Set();
+
+    function addRow(task, row) {
+      if (task.status === 'dropped' || !matchesPlan(task, date, storedPlan || {})) return;
+      var next = Object.assign({}, row, task, { shared: true });
+      next.block = task.scheduled_block || (row && row.block) || 'afternoon';
+      next.after_title = task.after && byId.has(task.after) ? byId.get(task.after).title : (row && row.after_title);
+      if (task.status === 'done') next.status = 'done';
+      else if (task.skipped_date === date) next.status = 'skipped';
+      else next.status = !task.status_updated_at && row ? row.status : 'todo';
+      plan.tasks.push(next);
+      shown.add(task.id);
     }
 
-    status($('planStatus'), 'Сохраняю...', '');
-    // Задачи может не оказаться в сегодняшнем плане: страница на телефоне живёт
-    // днями, а план за это время пересобрался. Раньше отметка в таком случае
-    // молча отменялась, а подпись говорила «Сохранено».
-    var found = false;
-    updateJson(REPO_DATA, 'plans/' + mskToday() + '.json', function (plan) {
-      found = false;
-      (plan.tasks || []).forEach(function (t) {
-        if (t.id !== id) return;
-        found = true;
-        t.status = next;
-        t.done_at = at;
-      });
-      return found ? plan : null;
-    }, 'план: ' + id + ' -> ' + next).then(function (plan) {
-      if (!found) {
-        status($('planStatus'), 'Этой задачи в сегодняшнем плане уже нет, он пересобран. Открываю свежий.', 'warn');
-        return loadPlan(true);
+    storedRows.forEach(function (row) {
+      var task = byId.get(row.id);
+      if (task) addRow(task, row);
+      else plan.tasks.push(row);
+    });
+    tasks.forEach(function (task) {
+      if (task.scheduled_date === date && !shown.has(task.id)) addRow(task, null);
+    });
+    return plan;
+  }
+
+  function setTaskStatus(id, next, day, storedOnly, statusId, row) {
+    var timestamp = new Date().toISOString();
+    var at = next === 'done' ? timestamp : null;
+    var st = $(statusId);
+    var controls = row.querySelectorAll('button');
+    controls.forEach(function (button) { button.disabled = true; });
+    status(st, 'Сохраняю…', '');
+    var path = storedOnly ? 'plans/' + day + '.json' : 'backlog.json';
+    return updateJson(REPO_DATA, path, function (data) {
+      var task = (data.tasks || []).find(function (t) { return t.id === id && t.status !== 'dropped'; });
+      if (!task) throw new Error('Задача перемещена. Обновите список.');
+      if (next === 'skipped' && task.status === 'done') throw new Error('Задача уже выполнена.');
+      task.done_at = at;
+      if (storedOnly) {
+        task.status = next;
+      } else {
+        task.status = next === 'done' ? 'done' : 'open';
+        task.status_updated_at = timestamp;
+        task.skipped_date = next === 'skipped' ? day : null;
       }
-      planCache = plan;
-      renderPlan(plan);
-      status($('planStatus'), 'Сохранено.', 'ok');
+      return data;
+    }, 'задача: ' + id + ' → ' + next).then(function () {
+      return refreshTaskViews().then(function () {
+        status(st, 'Сохранено.', 'ok');
+      });
     }).catch(function (err) {
-      status($('planStatus'), err.message + ' Отметка не сохранена.', 'err');
-      loadPlan(true);
+      status(st, err.message + ' Отметка не сохранена.', 'err');
+    }).then(function () {
+      controls.forEach(function (button) { button.disabled = false; });
     });
   }
 
   function newTaskId(taken) {
     for (;;) {
-      var id = "tsk_" + Math.random().toString(16).slice(2, 8);
+      var id = 'tsk_' + Math.random().toString(16).slice(2, 8);
       if (taken.indexOf(id) === -1) return id;
     }
   }
 
-  // Своя задача не проходит через модель, поэтому пишется сразу в два места:
-  // в backlog, иначе вечерний прогон её не найдёт и она пропадёт вместе с планом,
-  // и в сегодняшний план, ради чего всё и затевалось.
-  function addPlanTask(title, block) {
-    var today = mskToday();
-    var made = null;
-    status($("planStatus"), "Добавляю...", "");
-    return updateJson(REPO_DATA, "backlog.json", function (backlog) {
-      var tasks = backlog.tasks || (backlog.tasks = []);
-      var id = newTaskId(tasks.map(function (t) { return t.id; }));
-      made = {
-        id: id, title: title, due: null, est_min: null, source: null,
-        first_seen: today, carry_count: 0, last_carry_date: null,
-        last_planned_date: today, status: "open", done_at: null
-      };
-      tasks.push(made);
-      return backlog;
-    }, "задача вручную: " + title).then(function () {
-      return updateJson(REPO_DATA, "plans/" + today + ".json", function (plan) {
-        if (!plan.date) {
-          plan.date = today;
-          plan.generated_at = new Date().toISOString().replace(/\.\d+Z$/, "Z");
-          plan.focus = plan.focus || null;
-          plan.events = plan.events || [];
-          plan.upcoming = plan.upcoming || [];
-          plan.evening_note = plan.evening_note || null;
-        }
-        plan.tasks = plan.tasks || [];
-        plan.tasks.push({
-          id: made.id, title: made.title, due: null, block: block,
-          est_min: null, first_seen: today, carry_count: 0,
-          status: "todo", done_at: null
-        });
-        return plan;
-      }, "план: своя задача");
-    }).then(function (plan) {
-      planCache = plan;
-      renderPlan(plan);
-      status($("planStatus"), "Добавлено.", "ok");
-      loadAll(true);
-    }).catch(function (err) {
-      status($("planStatus"), err.message, "err");
-      loadPlan(true);
+  function readDay(date) {
+    return Promise.all([readPlannerJson('backlog.json'), readPlannerJson('plans/' + date + '.json')]).then(function (r) {
+      return { backlog: r[0], plan: mergeDayPlan(date, r[0], r[1]) };
+    });
+  }
+
+  function readPlannerJson(path) {
+    return getJson(REPO_DATA, path).then(function (f) { return f.json; }).catch(function (err) {
+      if (err.status === 404) return null;
+      throw err;
     });
   }
 
   function loadPlan(quiet) {
-    if (!quiet) status($('planStatus'), 'Загружаю...', '');
-    return getJson(REPO_DATA, 'plans/' + mskToday() + '.json').then(function (f) {
-      planCache = f.json;
-      renderPlan(f.json);
+    var picker = $('planDay');
+    var today = mskToday();
+    var date = picker.value;
+    if (!date || date === lastToday) date = today;
+    lastToday = today;
+    picker.value = date;
+    var request = ++planRequest;
+    if (!quiet) {
+      $('planBody').textContent = '';
+      status($('planStatus'), 'Загружаю…', '');
+    }
+    return readDay(date).then(function (data) {
+      if (request !== planRequest) return;
+      renderPlan(data.plan);
       status($('planStatus'), '', '');
     }).catch(function (err) {
-      if (err.status === 404) {
-        planCache = null;
-        renderPlan(null);
-        status($('planStatus'), '', '');
-        return;
-      }
-      status($('planStatus'), err.message, 'err');
+      if (request === planRequest) status($('planStatus'), err.message, 'err');
     });
+  }
+
+  function refreshTaskViews() {
+    var jobs = [];
+    if (!$('view-plan').hidden) jobs.push(loadPlan(true));
+    if (!$('view-all').hidden) jobs.push(loadAll(true));
+    return Promise.all(jobs);
   }
 
   /* ---------- все задачи ---------- */
 
   function ddmm(date) {
-    return date ? date.slice(8, 10) + '.' + date.slice(5, 7) : '';
+    if (typeof date !== 'string' || !date) return '';
+    var label = date.slice(8, 10) + '.' + date.slice(5, 7);
+    return date.slice(0, 4) === mskToday().slice(0, 4) ? label : label + '.' + date.slice(0, 4);
   }
 
-  function backlogRow(t, waiting, titles) {
-    var row = el('div', 'task');
+  function backlogRow(t, planRow, titles, today) {
+    var done = t.status === 'done' || (planRow && planRow.status === 'done');
+    var row = el('div', 'task' + (done ? ' done' : ''));
+    var box = el('button', 'box', done ? '✓' : '');
+    box.setAttribute('aria-label', done ? 'Вернуть в работу' : 'Отметить выполненной');
+    box.addEventListener('click', function () {
+      setTaskStatus(t.id, done ? 'todo' : 'done', today, false, 'allStatus', row);
+    });
+    row.appendChild(box);
+
     var body = el('div', 'body');
     body.appendChild(el('div', 't', t.title));
-    if (t.after && titles && titles[t.after]) body.appendChild(el('div', 'after', 'после: ' + titles[t.after]));
+    if (t.after && titles.has(t.after)) body.appendChild(el('div', 'after', 'после: ' + titles.get(t.after)));
 
     var meta = el('div', 'meta');
+    if (t.scheduled_date) meta.appendChild(el('span', 'tag', 'в плане ' + ddmm(t.scheduled_date)));
+    if (t.not_before && !t.scheduled_date && t.not_before > today) meta.appendChild(el('span', 'tag', 'не раньше ' + ddmm(t.not_before)));
+    if (t.due) meta.appendChild(el('span', 'tag' + (!done && t.due < today ? ' hot' : ''), 'срок ' + ddmm(t.due)));
     if (t.carry_count) meta.appendChild(el('span', 'tag' + (t.carry_count >= 2 ? ' hot' : ''), 'перенос ' + t.carry_count));
-    if (waiting != null && waiting > 0) meta.appendChild(el('span', 'tag', 'ждёт ' + waiting + ' дн.'));
-    if (t.not_before && t.not_before > mskToday()) meta.appendChild(el('span', 'tag', 'не раньше ' + ddmm(t.not_before)));
-
-    var bits = [];
-    if (t.est_min) bits.push(t.est_min + ' мин');
-    if (t.due) bits.push('до ' + t.due);
-    meta.appendChild(document.createTextNode(bits.join(' · ')));
-    body.appendChild(meta);
-
+    if (t.est_min) meta.appendChild(document.createTextNode(t.est_min + ' мин'));
+    if (meta.childNodes.length) body.appendChild(meta);
     row.appendChild(body);
 
-    var x = el('button', 'rowbtn', '✕');
-    x.setAttribute('aria-label', 'Снять задачу');
-    x.addEventListener('click', function () {
-      if (!confirm('Снять задачу «' + t.title + '»?')) return;
-      dropTask(t.id, t.title);
-    });
-    row.appendChild(x);
+    if (!done) {
+      var edit = el('button', 'nextbtn', 'Изменить');
+      edit.addEventListener('click', function () {
+        var displayTask = planRow || t;
+        editTask(displayTask, t.scheduled_date || (planRow ? today : ''), 'allStatus');
+      });
+      body.appendChild(edit);
+
+      var drop = el('button', 'rowbtn', '✕');
+      drop.setAttribute('aria-label', 'Снять задачу');
+      drop.addEventListener('click', function () {
+        if (confirm('Снять задачу «' + t.title + '»?')) dropTask(t.id, row);
+      });
+      row.appendChild(drop);
+    }
     return row;
   }
 
   function renderAll(backlog, plan) {
     var body = $('allBody');
+    var previousHistory = body.querySelector('details');
+    var historyOpen = previousHistory && previousHistory.open;
     body.textContent = '';
-
-    var open = ((backlog && backlog.tasks) || []).filter(function (t) { return t.status === 'open'; });
-    if (!open.length) {
-      body.appendChild(el('div', 'empty', 'Задач нет. Всё, что вы надиктуете в инбокс, вечерний прогон положит сюда.'));
-      return;
-    }
-
-    var today = mskToday();
-    var planned = null;
-    if (plan && plan.tasks) {
-      planned = {};
-      plan.tasks.forEach(function (t) { planned[t.id] = true; });
-    }
-    var titles = {};
-    ((backlog && backlog.tasks) || []).forEach(function (t) { titles[t.id] = t.title; });
-
-    var inPlan = [];
-    var waiting = [];
-    var later = [];
-    open.forEach(function (t) {
-      var today_ = planned ? !!planned[t.id] : t.last_planned_date === today;
-      if (today_) inPlan.push(t);
-      else if (t.not_before && t.not_before > today) later.push(t);
-      else waiting.push(t);
+    var tasks = (backlog && backlog.tasks) || [];
+    var today = plan.date;
+    var titles = new Map(tasks.map(function (t) { return [t.id, t.title]; }));
+    var planned = new Map(plan.tasks.map(function (t) { return [t.id, t]; }));
+    var groups = {
+      overdue: { title: 'Просрочен срок', tasks: [] },
+      today: { title: 'Сегодня', tasks: [] },
+      missed: { title: 'Нужно перенести', tasks: [] },
+      upcoming: { title: 'Предстоящие', tasks: [] },
+      backlog: { title: 'Без даты', tasks: [] }
+    };
+    var completed = [];
+    tasks.forEach(function (t) {
+      var row = planned.get(t.id);
+      if (t.status === 'done' || (t.status === 'open' && row && row.status === 'done')) {
+        completed.push(t);
+        return;
+      }
+      if (t.status !== 'open') return;
+      var group;
+      if (t.due && t.due < today) group = groups.overdue;
+      else if (row || t.due === today) group = groups.today;
+      else if (t.scheduled_date && t.scheduled_date < today) group = groups.missed;
+      else if (t.scheduled_date || t.due || (t.not_before && t.not_before > today)) group = groups.upcoming;
+      else group = groups.backlog;
+      group.tasks.push(t);
     });
-    later.sort(function (a, b) { return a.not_before < b.not_before ? -1 : 1; });
-
-    // ожидание отложенной задачи начинается с её «не раньше», как и в планировщике
-    waiting.forEach(function (t) {
-      var since = t.last_planned_date || t.first_seen;
-      if (t.not_before && t.not_before > since) since = t.not_before;
-      t._w = daysSince(since, today);
+    groups.overdue.tasks.sort(function (a, b) { return a.due.localeCompare(b.due); });
+    groups.missed.tasks.sort(function (a, b) { return a.scheduled_date.localeCompare(b.scheduled_date); });
+    groups.upcoming.tasks.sort(function (a, b) {
+      return (a.scheduled_date || a.due || a.not_before).localeCompare(b.scheduled_date || b.due || b.not_before);
     });
-    waiting.sort(function (a, b) { return b._w - a._w; });
-
-    if (inPlan.length) {
-      body.appendChild(el('div', 'block-title', 'В плане сегодня (' + inPlan.length + ')'));
-      inPlan.forEach(function (t) { body.appendChild(backlogRow(t, null, titles)); });
-    }
-    if (waiting.length) {
-      body.appendChild(el('div', 'block-title', 'Ждут своего дня (' + waiting.length + ')'));
-      waiting.forEach(function (t) { body.appendChild(backlogRow(t, t._w, titles)); });
-    }
-    if (later.length) {
-      body.appendChild(el('div', 'block-title', 'Отложены до своего дня (' + later.length + ')'));
-      later.forEach(function (t) { body.appendChild(backlogRow(t, null, titles)); });
+    var count = 0;
+    Object.values(groups).forEach(function (group) {
+      if (!group.tasks.length) return;
+      count += group.tasks.length;
+      body.appendChild(el('h2', 'block-title', group.title + ' (' + group.tasks.length + ')'));
+      group.tasks.forEach(function (t) { body.appendChild(backlogRow(t, planned.get(t.id), titles, today)); });
+    });
+    if (!count) body.appendChild(el('div', 'empty', 'Открытых задач нет. Нажмите «＋ Задача», чтобы добавить дело.'));
+    if (completed.length) {
+      completed.sort(function (a, b) { return String(b.done_at || '').localeCompare(a.done_at || ''); });
+      var history = el('details', 'task-history');
+      history.open = historyOpen;
+      history.appendChild(el('summary', null, 'Выполненные (' + completed.length + ')'));
+      completed.forEach(function (t) { history.appendChild(backlogRow(t, planned.get(t.id), titles, today)); });
+      body.appendChild(history);
     }
   }
 
-  function daysSince(from, to) {
-    var a = Date.parse(from + 'T00:00:00Z');
-    var b = Date.parse(to + 'T00:00:00Z');
-    if (isNaN(a) || isNaN(b)) return 0;
-    return Math.round((b - a) / 86400000);
-  }
-
-  // Задача не стирается: у неё меняется статус, запись остаётся в backlog.
-  // Из сегодняшнего плана она при этом уходит, иначе так и будет мозолить глаза.
-  function dropTask(id, title) {
-    status($("allStatus"), "Убираю...", "");
-    return updateJson(REPO_DATA, "backlog.json", function (backlog) {
-      var hit = false;
-      (backlog.tasks || []).forEach(function (t) {
-        if (t.id !== id) return;
-        hit = true;
-        t.status = "dropped";
-        t.done_at = new Date().toISOString();
-      });
-      return hit ? backlog : null;
-    }, "задача снята: " + title).then(function () {
-      return updateJson(REPO_DATA, "plans/" + mskToday() + ".json", function (plan) {
-        var rest = (plan.tasks || []).filter(function (t) { return t.id !== id; });
-        if (rest.length === (plan.tasks || []).length) return null;
-        plan.tasks = rest;
-        return plan;
-      }, "план: снята " + id).catch(function (err) {
-        if (err.status === 404) return null;
-        throw err;
-      });
-    }).then(function () {
-      loadPlan(true);
-      // сообщение ставим после перерисовки: loadAll затирает строку статуса
-      return loadAll(true).then(function () {
-        status($("allStatus"), "Задача снята.", "ok");
-      });
+  function dropTask(id, row) {
+    var st = $('allStatus');
+    var controls = row.querySelectorAll('button');
+    controls.forEach(function (button) { button.disabled = true; });
+    status(st, 'Убираю…', '');
+    return updateJson(REPO_DATA, 'backlog.json', function (backlog) {
+      var task = (backlog.tasks || []).find(function (t) { return t.id === id && t.status === 'open'; });
+      if (!task) throw new Error('Задача уже закрыта или перемещена.');
+      task.status = 'dropped';
+      task.done_at = new Date().toISOString();
+      return backlog;
+    }, 'задача снята: ' + id).then(function () {
+      return refreshTaskViews().then(function () { status(st, 'Задача снята.', 'ok'); });
     }).catch(function (err) {
-      status($("allStatus"), err.message, "err");
-      loadAll(true);
+      status(st, err.message, 'err');
+      controls.forEach(function (button) { button.disabled = false; });
     });
   }
 
   function loadAll(quiet) {
-    if (!quiet) status($('allStatus'), 'Загружаю...', '');
-    return Promise.all([
-      getJson(REPO_DATA, 'backlog.json'),
-      getJson(REPO_DATA, 'plans/' + mskToday() + '.json').catch(function (e) {
-        if (e.status === 404) return { json: null };
-        throw e;
-      })
-    ]).then(function (r) {
-      renderAll(r[0].json, r[1].json);
+    var request = ++allRequest;
+    if (!quiet) status($('allStatus'), 'Загружаю…', '');
+    return readDay(mskToday()).then(function (data) {
+      if (request !== allRequest) return;
+      renderAll(data.backlog, data.plan);
       status($('allStatus'), '', '');
     }).catch(function (err) {
-      if (err.status === 404) {
-        renderAll(null, null);
-        status($('allStatus'), '', '');
-        return;
-      }
-      status($('allStatus'), err.message, 'err');
+      if (request === allRequest) status($('allStatus'), err.message, 'err');
     });
   }
 
@@ -1385,6 +1633,8 @@
     ['drop', 'Бросить'],
     ['project', 'Проект']
   ];
+  var shelfItems = [];
+  var staleBusy = false;
 
   function decisionLabel(code) {
     for (var i = 0; i < DECISIONS.length; i++) if (DECISIONS[i][0] === code) return DECISIONS[i][1];
@@ -1395,9 +1645,30 @@
     var card = el('div', 'card stale-item');
     card.appendChild(el('h3', null, item.title));
 
-    var bits = ['с ' + item.first_seen, 'переносов ' + item.carry_count];
-    if (item.due) bits.push('срок ' + item.due);
+    var bits = [];
+    if (item.due) bits.push('срок ' + ddmm(item.due));
+    if (item.carry_count) bits.push('переносов ' + item.carry_count);
+    if (item.decision_note) bits.push(item.decision_note);
     card.appendChild(el('div', 'meta', bits.join(' · ')));
+
+    var actions = el('div', 'row task-actions');
+    card.appendChild(actions);
+    if (item.archived_at) {
+      var unarchive = el('button', null, 'Вернуть на полку');
+      unarchive.addEventListener('click', function () { archiveStale([item.id], false); });
+      actions.appendChild(unarchive);
+      return card;
+    }
+    var resume = el('button', null, 'В задачи');
+    resume.addEventListener('click', function () { resumeStale(item.id); });
+    actions.appendChild(resume);
+    var archive = el('button', null, 'В архив');
+    archive.addEventListener('click', function () { archiveStale([item.id], true); });
+    actions.appendChild(archive);
+
+    if (localMode) return card;
+    var options = el('details', 'task-history');
+    options.appendChild(el('summary', null, 'Решение для ИИ'));
 
     var note = document.createElement('input');
     note.type = 'text';
@@ -1413,25 +1684,100 @@
       box.appendChild(b);
     });
 
-    card.appendChild(box);
-    card.appendChild(note);
+    options.appendChild(box);
+    options.appendChild(note);
 
     if (item.decision) {
-      card.appendChild(el('div', 'meta', 'решение: ' + decisionLabel(item.decision) +
+      options.appendChild(el('div', 'meta', 'решение: ' + decisionLabel(item.decision) +
         (item.decided_at ? ', ' + item.decided_at : '')));
     }
+    card.appendChild(options);
     return card;
   }
 
   function renderStale(data) {
     var body = $('staleBody');
+    var oldArchive = body.querySelector('#shelfArchive');
+    var open = !!(oldArchive && oldArchive.open);
     body.textContent = '';
     var items = (data && data.items) || [];
-    if (!items.length) {
-      body.appendChild(el('div', 'empty', 'Зависших задач нет. Сюда попадает то, что перенеслось четыре раза.'));
-      return;
+    shelfItems = items.filter(function (item) { return !item.archived_at; });
+    $('staleClear').hidden = !shelfItems.length;
+    if (!shelfItems.length) body.appendChild(el('div', 'empty', 'Полка свободна. Можно оставить здесь то, что подождёт.'));
+    shelfItems.forEach(function (item) { body.appendChild(staleCard(item)); });
+    var archived = items.filter(function (item) { return item.archived_at; });
+    if (archived.length) {
+      var history = el('details', 'task-history');
+      history.id = 'shelfArchive';
+      history.open = open;
+      history.appendChild(el('summary', null, 'Архив (' + archived.length + ')'));
+      archived.forEach(function (item) { history.appendChild(staleCard(item)); });
+      body.appendChild(history);
     }
-    items.forEach(function (item) { body.appendChild(staleCard(item)); });
+  }
+
+  function saveStaleTask(values, draft) {
+    return readPlannerJson('backlog.json').then(function (backlog) {
+      return updateJson(REPO_DATA, 'stale.json', function (data) {
+        var items = data.items || (data.items = []);
+        if (draft.newId && items.some(function (item) { return item.id === draft.newId; })) return null;
+        var taken = items.concat((backlog && backlog.tasks) || []).map(function (item) { return item.id; });
+        draft.newId = draft.newId || newTaskId(taken);
+        items.push({ id: draft.newId, title: values.title, due: values.due, first_seen: mskToday(), carry_count: 0 });
+        return data;
+      }, 'на полку: ' + values.title);
+    });
+  }
+
+  function changeShelf(mutate, message) {
+    if (staleBusy) return;
+    staleBusy = true;
+    var st = $('staleStatus');
+    status(st, 'Сохраняю…', '');
+    return mutate().then(function (data) {
+      renderStale(data);
+      status(st, message, 'ok');
+    }).catch(function (err) {
+      status(st, err.message, 'err');
+    }).then(function () { staleBusy = false; });
+  }
+
+  function archiveStale(ids, archive) {
+    var selection = new Set(ids);
+    var at = archive ? new Date().toISOString() : null;
+    return changeShelf(function () {
+      return updateJson(REPO_DATA, 'stale.json', function (data) {
+        (data.items || []).forEach(function (item) {
+          if (selection.has(item.id)) item.archived_at = at;
+        });
+        return data;
+      }, archive ? 'полка: в архив' : 'полка: из архива');
+    }, archive ? 'Перемещено в архив.' : 'Возвращено на полку.');
+  }
+
+  function resumeStale(id) {
+    return changeShelf(function () {
+      return readPlannerJson('stale.json').then(function (data) {
+        var item = ((data && data.items) || []).find(function (task) { return task.id === id && !task.archived_at; });
+        if (!item) throw new Error('Дело уже перемещено. Обновите полку.');
+        return updateJson(REPO_DATA, 'backlog.json', function (backlog) {
+          var tasks = backlog.tasks || (backlog.tasks = []);
+          if (tasks.some(function (task) { return task.id === id; })) return null;
+          tasks.push({
+            id: id, title: item.title, due: item.due || null, source: item.source || null,
+            est_min: item.est_min || null, decision_note: item.decision_note || null,
+            first_seen: item.first_seen || mskToday(), carry_count: 0, last_carry_date: null,
+            last_planned_date: null, status: 'open', done_at: null
+          });
+          return backlog;
+        }, 'с полки в задачи: ' + id);
+      }).then(function () {
+        return updateJson(REPO_DATA, 'stale.json', function (data) {
+          data.items = (data.items || []).filter(function (item) { return item.id !== id; });
+          return data;
+        }, 'полка: возвращена задача ' + id);
+      });
+    }, 'Дело теперь в списке «Всё».');
   }
 
   function decide(id, decision, note) {
@@ -1725,8 +2071,7 @@
       if (run.conclusion === 'success') {
         status(st, label + ': готово.', 'ok');
         loadState();
-        loadPlan(true);
-        loadAll(true);
+        refreshTaskViews();
         loadFood(true);
         loadPending(true);
         loadEvents(true);
@@ -1743,6 +2088,10 @@
   function runWorkflow(kind, label, statusId) {
     var file = WORKFLOWS[kind];
     var st = $(statusId || 'runStatus');
+    if (localMode) {
+      status(st, 'Для прогона ИИ подключите GitHub в настройках.', 'warn');
+      return Promise.resolve();
+    }
     RUN_BUTTONS.forEach(function (id) { $(id).disabled = true; });
     status(st, label + ': запускаю...', '');
 
@@ -1772,42 +2121,6 @@
       $('kvEvening').textContent = f.json.last_evening_run ? new Date(f.json.last_evening_run).toLocaleString('ru-RU') : 'не было';
       lastSummary = { at: f.json.last_evening_run || null, sum: f.json.last_evening_summary || null };
     }).catch(function () {});
-  }
-
-  // Выключатель гасит только расписание: кнопки ручного прогона работают всегда.
-  var SETTINGS_PATH = "settings.json";
-
-  function loadSettings() {
-    return getJson(REPO_DATA, SETTINGS_PATH).then(function (f) {
-      $("autoMorning").checked = f.json.auto_morning !== false;
-      $("autoEvening").checked = f.json.auto_evening !== false;
-      $("autoEvents").checked = f.json.auto_events !== false;
-    }).catch(function () {
-      $("autoMorning").checked = true;
-      $("autoEvening").checked = true;
-      $("autoEvents").checked = true;
-    });
-  }
-
-  function saveSettings() {
-    var morning = $("autoMorning").checked;
-    var evening = $("autoEvening").checked;
-    var events = $("autoEvents").checked;
-    status($("runStatus"), "Сохраняю...", "");
-    return updateFile(REPO_DATA, SETTINGS_PATH, function (text) {
-      var cur = {};
-      try { cur = JSON.parse(text) || {}; } catch (e) { cur = {}; }
-      cur.schema_version = 1;
-      cur.auto_morning = morning;
-      cur.auto_evening = evening;
-      cur.auto_events = events;
-      return JSON.stringify(cur, null, 2) + '\n';
-    }, "настройки: автопрогон").then(function () {
-      status($("runStatus"), "Сохранено.", "ok");
-    }).catch(function (err) {
-      status($("runStatus"), err.message, "err");
-      loadSettings();
-    });
   }
 
   /* ---------- настройки ---------- */
@@ -1888,10 +2201,63 @@
       if (res[0] && res[1] && res[2]) status(st, 'Токен рабочий: запись в оба репозитория и запуск прогонов.', 'ok');
       else if (res[0] && res[1]) status(st, 'Записывать можно, но кнопки прогона работать не будут: токену не выдано право Actions.', 'warn');
       else status(st, 'Токен принят, но не всё доступно. Смотрите строки ниже.', 'warn');
-      flush(true);
+      if (res[0] && localMode) switchStorage('github');
+      else flush(true);
     }).catch(function (err) {
       status(st, err.message, 'err');
     });
+  }
+
+  function importTaskFiles(files) {
+    var st = $('storageStatus');
+    if (!localMode || !files.length) return;
+    $('taskImport').disabled = true;
+    status(st, 'Читаю файлы…', '');
+    var incoming = { tasks: [], items: [] };
+    return Promise.all(files.map(function (file) {
+      return file.text().then(function (text) {
+        var parsed = JSON.parse(text.replace(/^\uFEFF/, ''));
+        var key = parsed && Array.isArray(parsed.tasks) ? 'tasks' : 'items';
+        if (!parsed || !Array.isArray(parsed[key]) || parsed[key].some(function (item) {
+          return !item || typeof item.id !== 'string' || !item.id.trim() || typeof item.title !== 'string' || !item.title.trim() ||
+            (item.due != null && typeof item.due !== 'string') ||
+            (item.scheduled_date != null && typeof item.scheduled_date !== 'string') ||
+            (item.not_before != null && typeof item.not_before !== 'string');
+        })) throw new Error('Проверьте формат файла «' + file.name + '».');
+        return { key: key, rows: parsed[key] };
+      }).catch(function (err) {
+        throw new Error('Не удалось прочитать «' + file.name + '». ' + err.message);
+      });
+    })).then(function (groups) {
+      groups.forEach(function (group) { incoming[group.key] = incoming[group.key].concat(group.rows); });
+      return Promise.all([readPlannerJson('backlog.json'), readPlannerJson('stale.json')]);
+    }).then(function (current) {
+      var known = new Set(((current[0] && current[0].tasks) || []).concat((current[1] && current[1].items) || []).map(function (item) { return item.id; }));
+      var added = 0;
+      function merge(path, key) {
+        var fresh = incoming[key].filter(function (item) {
+          if (known.has(item.id)) return false;
+          known.add(item.id);
+          return true;
+        });
+        if (!fresh.length) return Promise.resolve();
+        var count = 0;
+        return updateJson(REPO_DATA, path, function (data) {
+          var rows = data[key] || (data[key] = []);
+          var existing = new Set(rows.map(function (item) { return item.id; }));
+          var additions = fresh.filter(function (item) { return !existing.has(item.id); });
+          count = additions.length;
+          if (!count) return null;
+          data[key] = rows.concat(additions);
+          return data;
+        }, 'импорт задач').then(function () { added += count; });
+      }
+      return merge('backlog.json', 'tasks').then(function () { return merge('stale.json', 'items'); }).then(function () {
+        status(st, added ? 'Добавлено задач: ' + added + '.' : 'Новых задач в этих файлах нет.', 'ok');
+      });
+    }).catch(function (err) {
+      status(st, err.message, 'err');
+    }).then(function () { $('taskImport').disabled = false; });
   }
 
   /* ---------- фотографии ---------- */
@@ -1993,7 +2359,7 @@
     var body = $("evBody");
     body.textContent = "";
     if (!mine.length) {
-      body.appendChild(el("div", "empty", "Здесь пока пусто. Поиск идёт по воскресеньям, или нажмите «Поискать сейчас»."));
+      body.appendChild(el("div", "empty", localMode ? "Подборки «Афиши» доступны с подключением GitHub." : "Здесь пока пусто. Подборку можно собрать кнопкой «Поискать с ИИ»."));
       return;
     }
     mine.forEach(function (e) {
@@ -2137,7 +2503,6 @@
   }
 
   function loadEvents(quiet) {
-    if (!get(LS.token, "")) return Promise.resolve();
     if (!quiet) status($("eventsStatus"), "Загружаю...", "");
     return getJson(REPO_DATA, EVENTS_PATH).then(function (f) {
       eventsCache = f.json;
@@ -2148,7 +2513,11 @@
         : "Поиска ещё не было.";
       if (!quiet) status($("eventsStatus"), "", "");
     }).catch(function (err) {
-      if (err.status === 404) { renderEvents({ items: [] }); return; }
+      if (err.status === 404) {
+        renderEvents({ items: [] });
+        status($("eventsStatus"), "", "");
+        return;
+      }
       status($("eventsStatus"), err.message, "err");
     });
   }
@@ -2364,7 +2733,6 @@
   }
 
   function loadNotes(quiet) {
-    if (!get(LS.token, "")) return Promise.resolve();
     if (!quiet) status($("notesStatus"), "Загружаю...", "");
     return getJson(REPO_DATA, NOTES_PATH).then(function (f) {
       notesCache = f.json;
@@ -2397,10 +2765,10 @@
   function diaryPath(month) { return "journal/" + month + ".md"; }
 
   function readDQueue() {
-    try { return JSON.parse(get(DIARY_QUEUE, "[]")) || []; } catch (e) { return []; }
+    try { return JSON.parse(get(queueKey(DIARY_QUEUE), "[]")) || []; } catch (e) { return []; }
   }
 
-  function writeDQueue(q) { set(DIARY_QUEUE, JSON.stringify(q)); }
+  function writeDQueue(q) { set(queueKey(DIARY_QUEUE), JSON.stringify(q)); }
 
   function parseDiary(text) {
     var out = [];
@@ -2500,7 +2868,7 @@
     if (dFlushing) return Promise.resolve();
     var q = readDQueue();
     if (!q.length) { renderDQueue(); return Promise.resolve(); }
-    if (!get(LS.token, "")) {
+    if (!localMode && !get(LS.token, "")) {
       if (!quiet) status($("diaryStatus"), "Токен не задан, записи ждут в очереди.", "warn");
       return Promise.resolve();
     }
@@ -2699,7 +3067,6 @@
   }
 
   function loadDiary(month, quiet) {
-    if (!get(LS.token, "")) return Promise.resolve();
     var want = month || diaryShown || mskParts().date.slice(0, 7);
     if (!quiet) status($("diaryStatus"), "Читаю...", "");
     return loadMonths().then(function (months) {
@@ -2779,7 +3146,7 @@
     card.hidden = false;
     var n = res ? res.count : 0;
     $("pendingTitle").textContent = n ? "Ждут разбора: " + n : "Инбокс разобран";
-    $("runEveningInbox").hidden = !n;
+    $("runEveningInbox").hidden = localMode || !n;
     (res && res.items || []).forEach(function (it) {
       var div = el("div", "queue-item withbtn");
       var box = el("div", "qtext");
@@ -2788,6 +3155,14 @@
       box.appendChild(t);
       box.appendChild(document.createTextNode(it.text || "(пусто)"));
       div.appendChild(box);
+      if (it.text) {
+        var convert = el('button', 'nextbtn', 'В задачу');
+        convert.addEventListener('click', function () {
+          openTaskEditor({ title: it.text.replace(/\s+/g, ' '), source: 'inbox/' + it.name, statusId: 'pendingStatus' });
+        });
+        box.appendChild(el('br'));
+        box.appendChild(convert);
+      }
       var x = el("button", "rowbtn", "✕");
       x.setAttribute("aria-label", "Убрать запись из разбора");
       x.addEventListener("click", function () {
@@ -2805,8 +3180,24 @@
       hint = "Последний разбор: " + new Date(lastSummary.at).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
       if (lastSummary.sum) hint += ". Разобрано: " + summaryLine(lastSummary.sum) + ".";
     }
-    if (n) hint += (hint ? " " : "") + "Сам разбор в 22:00, но можно не ждать.";
     $("pendingHint").textContent = hint;
+  }
+
+  function convertInboxTask(source, save) {
+    var archive = source.replace(/^inbox\//, 'inbox/processed/');
+    var message = 'инбокс: в задачу ' + source.slice(6);
+    return getFile(REPO_DATA, source).catch(function (err) {
+      if (err.status === 404) throw new Error('Запись уже разобрана. Закройте форму и обновите инбокс.');
+      throw err;
+    }).then(function (entry) {
+      return save().then(function () {
+        return updateFile(REPO_DATA, archive, function (text) { return text ? null : entry.text; }, message);
+      }).then(function () {
+        return deleteFile(REPO_DATA, source, entry.sha, message).catch(function (err) {
+          if (err.status !== 404) throw err;
+        });
+      });
+    });
   }
 
   // Надиктованное не стираем никогда: запись переезжает в inbox/discarded/,
@@ -2839,7 +3230,7 @@
 
   function loadPending(quiet) {
     var owner = get(LS.owner, "").trim();
-    if (!owner || !get(LS.token, "")) return Promise.resolve();
+    if (!localMode && (!owner || !get(LS.token, ""))) return Promise.resolve();
     return loadState().then(function () {
       return api("/repos/" + owner + "/" + REPO_DATA + "/contents/inbox");
     }).then(function (r) {
@@ -2880,7 +3271,7 @@
     if (name === 'diary') { renderDQueue(); dFlush(true); loadDiary(null, false); }
     if (name === 'notes') loadNotes(false);
     if (name === 'events') loadEvents(false);
-    if (name === 'settings') { loadState(); loadSettings(); }
+    if (name === 'settings' && !localMode) loadState();
   }
 
   /* ---------- запуск ---------- */
@@ -2888,9 +3279,46 @@
   $('send').addEventListener('click', submit);
   $('retry').addEventListener('click', function () { flush(false); });
   $('check').addEventListener('click', check);
+  $('useLocal').addEventListener('click', function () { switchStorage('local'); });
+  $('taskImport').addEventListener('click', function () { $('taskImportFile').click(); });
+  $('taskImportFile').addEventListener('change', function () {
+    var files = Array.from(this.files);
+    this.value = '';
+    importTaskFiles(files);
+  });
   $('planReload').addEventListener('click', function () { loadPlan(false); });
+  $('planDay').addEventListener('change', function () { loadPlan(false); });
+  $('planPrev').addEventListener('click', function () {
+    $('planDay').value = shiftPlanDay($('planDay').value || mskToday(), -1);
+    loadPlan(false);
+  });
+  $('planNext').addEventListener('click', function () {
+    $('planDay').value = shiftPlanDay($('planDay').value || mskToday(), 1);
+    loadPlan(false);
+  });
+  $('planToday').addEventListener('click', function () {
+    $('planDay').value = mskToday();
+    loadPlan(false);
+  });
+  $('planAdd').addEventListener('click', function () {
+    openTaskEditor({ day: $('planDay').value || mskToday(), statusId: 'planStatus' });
+  });
+  $('allAdd').addEventListener('click', function () { openTaskEditor({ statusId: 'allStatus' }); });
+  $('taskDay').addEventListener('change', syncTaskBlock);
+  $('taskToday').addEventListener('click', function () { $('taskDay').value = mskToday(); syncTaskBlock(); });
+  $('taskTomorrow').addEventListener('click', function () { $('taskDay').value = shiftPlanDay(mskToday(), 1); syncTaskBlock(); });
+  $('taskUnscheduled').addEventListener('click', function () { $('taskDay').value = ''; syncTaskBlock(); });
+  $('taskCancel').addEventListener('click', function () { $('taskDialog').close(); });
+  $('taskDialog').addEventListener('cancel', function (e) { if ($('taskSave').disabled) e.preventDefault(); });
+  $('taskForm').addEventListener('submit', submitTask);
   $('allReload').addEventListener('click', function () { loadAll(false); });
   $('staleReload').addEventListener('click', function () { loadStale(false); });
+  $('staleAdd').addEventListener('click', function () { openTaskEditor({ stale: true, statusId: 'staleStatus' }); });
+  $('staleClear').addEventListener('click', function () {
+    if (shelfItems.length && confirm('Убрать все дела с полки в архив? Их можно вернуть.')) {
+      archiveStale(shelfItems.map(function (item) { return item.id; }), true);
+    }
+  });
   $('foodReload').addEventListener('click', function () { loadFood(false); });
   $('dSend').addEventListener('click', dSubmit);
   $('dPhoto').addEventListener('click', function () { $('dFile').click(); });
@@ -2923,16 +3351,6 @@
   $('runEvents').addEventListener('click', function () {
     runWorkflow('events', 'Поиск мероприятий', 'eventsStatus');
   });
-  $('autoEvents').addEventListener('change', saveSettings);
-  $('planAdd').addEventListener('click', function () {
-    var i = $('planNew');
-    var v = i.value.trim();
-    if (!v) { i.focus(); return; }
-    i.value = '';
-    addPlanTask(v, $('planBlock').value);
-  });
-  $('autoMorning').addEventListener('change', saveSettings);
-  $('autoEvening').addEventListener('change', saveSettings);
   $('gear').addEventListener('click', function () { showTab('settings'); });
   $('segShop').addEventListener('click', function () { showFoodPane('shop'); });
   $('segRec').addEventListener('click', function () { showFoodPane('rec'); });
@@ -2957,23 +3375,17 @@
   $('wipe').addEventListener('click', function () {
     if (!confirm('Стереть токен из этого браузера?')) return;
     del(LS.token); del(LS.exp);
-    $('token').value = '';
-    $('tokenCard').hidden = true;
-    status($('settingsStatus'), 'Токен стёрт.', 'warn');
+    switchStorage('local');
   });
-  $('owner').addEventListener('change', function () { set(LS.owner, this.value.trim()); });
-  $('token').addEventListener('change', function () { set(LS.token, this.value.trim()); });
 
   Array.prototype.forEach.call(document.querySelectorAll('nav button'), function (b) {
     b.addEventListener('click', function () { showTab(b.dataset.tab); });
   });
 
-  ['planNew', 'nTopicNew'].forEach(function (id) {
-    $(id).addEventListener('keydown', function (e) {
-      if (e.key !== 'Enter') return;
-      e.preventDefault();
-      $(id === 'planNew' ? 'planAdd' : 'nTopicAdd').click();
-    });
+  $('nTopicNew').addEventListener('keydown', function (e) {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    $('nTopicAdd').click();
   });
 
   // Ctrl+Enter отправляет с физической клавиатуры
@@ -2988,7 +3400,7 @@
     dFlush(true);
     // Приложение с домашнего экрана живёт в памяти днями. Без этого на экране
     // остаётся вчерашний план, и отметки уходят в пустоту.
-    loadPlan(true);
+    refreshTaskViews();
   });
 
   // Safari вычищает хранилище сайта, если приложение неделю не открывали, и токен
@@ -3007,16 +3419,22 @@
   if (!get(LS.owner, '')) set(LS.owner, DEFAULT_OWNER);
   $('owner').value = get(LS.owner, DEFAULT_OWNER);
   $('token').value = get(LS.token, '');
+  $('storageLabel').textContent = localMode ? 'На этом ПК' : 'GitHub';
+  $('storageDescription').textContent = localMode
+    ? 'Данные сохраняются в этом браузере. Можно сразу добавлять дела.'
+    : 'Данные сохраняются в GitHub. На этом ПК также можно вести отдельный список.';
+  $('useLocal').hidden = localMode;
+  $('taskImport').hidden = !localMode;
+  $('taskImportHint').hidden = !localMode;
+  $('githubSettings').open = !localMode;
+  $('aiCard').hidden = localMode;
+  $('savedAccess').hidden = !get(LS.token, '');
+  $('runEvents').hidden = localMode;
+  if (localMode) $('send').textContent = 'Сохранить';
   renderQueue();
-
-  if (!get(LS.token, '')) {
-    showTab('settings');
-    status($('settingsStatus'), 'Вставьте токен и нажмите «Проверить».', 'warn');
-  } else {
-    showTab('inbox');
-    flush(true);
-    dFlush(true);
-  }
+  showTab('plan');
+  flush(true);
+  dFlush(true);
 })();
 </script>
 </body>
