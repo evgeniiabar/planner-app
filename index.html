@@ -245,6 +245,20 @@
   .task-actions { margin-top: 10px; }
   .task-history { margin-top: 16px; }
   .task-history summary { cursor: pointer; color: var(--dim); }
+  .task-title-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+  .task-title-row > :first-child { min-width: 0; overflow-wrap: anywhere; }
+  .priority-star { flex: 0 0 auto; min-width: 36px; min-height: 36px; padding: 3px; line-height: 1; font-size: 21px; }
+  .priority-star[aria-pressed=true], #allImportant[aria-pressed=true] { background: #f8e8b9; border-color: #e7c665; color: #73501a; }
+  .priority-mark { color: #8a5b19; }
+  .priority-field { display: flex; align-items: center; gap: 8px; color: var(--text); }
+  .task-checklist { margin: 8px 0 0; font-size: 14px; }
+  .task-checklist summary { cursor: pointer; color: var(--accent); }
+  .task-checklist ul { margin: 6px 0 0; padding: 0; list-style: none; }
+  .checklist-line { display: flex; align-items: flex-start; gap: 8px; margin: 0; padding: 6px 0; color: var(--text); overflow-wrap: anywhere; }
+  .checklist-line input, .priority-field input { flex: 0 0 auto; accent-color: var(--accent); width: 18px; height: 18px; margin: 1px 0 0; }
+  .checklist-line input:checked + span { text-decoration: line-through; color: var(--dim); }
+  .subtask-editor-row { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
+  .subtask-editor-row input { min-width: 0; }
   label { display: block; font-size: 13px; color: var(--dim); margin: 16px 0 6px; }
 
   .status { min-height: 22px; margin-top: 10px; font-size: 14px; color: var(--dim); }
@@ -465,7 +479,10 @@
   </section>
 
   <section class="view" id="view-all" hidden>
-    <button class="add-task" id="allAdd">＋ Задача</button>
+    <div class="row">
+      <button class="add-task" id="allAdd">＋ Задача</button>
+      <button id="allImportant" aria-pressed="false">★ Только важные</button>
+    </div>
     <div class="status" id="allStatus" role="status"></div>
     <div id="allBody"></div>
     <div class="row" style="margin-top:16px"><button id="allReload">Обновить</button></div>
@@ -640,6 +657,7 @@
     <h2 id="taskHeading">Новая задача</h2>
     <label for="taskTitle">Что сделать</label>
     <input type="text" id="taskTitle" autocomplete="off" required>
+    <label class="priority-field"><input type="checkbox" id="taskImportant"> Важная задача</label>
     <div class="task-fields">
       <div id="taskDayField">
         <label for="taskDay">В план на</label>
@@ -663,6 +681,11 @@
         <option value="evening">Вечер</option>
       </select>
     </div>
+    <details class="task-checklist" id="taskChecklistEditor">
+      <summary>Подзадачи</summary>
+      <div id="taskSubtasks"></div>
+      <button type="button" class="nextbtn" id="taskSubtaskAdd">＋ Подзадача</button>
+    </details>
     <div id="taskFormStatus" class="status" role="status"></div>
     <div class="row task-actions">
       <button type="button" id="taskCancel">Отмена</button>
@@ -1049,6 +1072,7 @@
   var planRequest = 0;
   var allRequest = 0;
   var taskDraft = null;
+  var openChecklists = new Set();
 
   function shiftPlanDay(day, amount) {
     var date = new Date(day + 'T00:00:00Z');
@@ -1060,6 +1084,11 @@
     taskDraft = draft;
     $('taskHeading').textContent = draft.stale ? 'Дело на потом' : (draft.id ? 'Изменить задачу' : 'Новая задача');
     $('taskTitle').value = draft.title || '';
+    $('taskImportant').checked = draft.important === true;
+    $('taskSubtasks').textContent = '';
+    var steps = taskSubtasks(draft);
+    steps.forEach(function (step) { subtaskField(step); });
+    $('taskChecklistEditor').open = steps.length > 0;
     $('taskDay').value = draft.day || '';
     $('taskDue').value = draft.due || '';
     $('taskBlock').value = BLOCK_TITLES[draft.block] ? draft.block : 'afternoon';
@@ -1078,7 +1107,48 @@
   function editTask(t, day, statusId) {
     openTaskEditor({
       id: t.id, title: t.title, day: day, due: t.due,
-      block: t.scheduled_block || t.block || 'afternoon', statusId: statusId
+      block: t.scheduled_block || t.block || 'afternoon', statusId: statusId,
+      important: t.important, subtasks: t.subtasks, stale: statusId === 'staleStatus'
+    });
+  }
+
+  function taskSubtasks(task) {
+    return Array.isArray(task.subtasks) ? task.subtasks : [];
+  }
+
+  function subtaskField(step) {
+    var row = el('div', 'subtask-editor-row');
+    var input = el('input');
+    input.type = 'text';
+    input.required = true;
+    input.placeholder = 'Что нужно сделать?';
+    input.setAttribute('aria-label', 'Название подзадачи');
+    input.value = step.title;
+    input.dataset.id = step.id;
+    var remove = el('button', 'rowbtn', '✕');
+    remove.type = 'button';
+    remove.setAttribute('aria-label', 'Удалить подзадачу');
+    remove.addEventListener('click', function () { row.remove(); });
+    row.append(input, remove);
+    $('taskSubtasks').appendChild(row);
+    return input;
+  }
+
+  function applyTaskDetails(task, draft, values) {
+    if (!draft.id || values.important !== (draft.important === true)) task.important = values.important;
+    var original = new Map(taskSubtasks(draft).map(function (step) { return [step.id, step]; }));
+    var edited = new Map(values.subtasks.map(function (step) { return [step.id, step]; }));
+    var current = taskSubtasks(task);
+    var kept = current.filter(function (step) { return !original.has(step.id) || edited.has(step.id); });
+    task.subtasks = kept.map(function (step) {
+      var before = original.get(step.id);
+      var after = edited.get(step.id);
+      return before && after && after.title !== before.title ? Object.assign({}, step, { title: after.title }) : step;
+    });
+    values.subtasks.forEach(function (step) {
+      if (!original.has(step.id) && !current.some(function (item) { return item.id === step.id; })) {
+        task.subtasks.push({ id: step.id, title: step.title, done: false });
+      }
     });
   }
 
@@ -1111,6 +1181,7 @@
       }
       if (!draft.id || values.title !== draft.title) task.title = values.title;
       if (!draft.id || values.due !== (draft.due || null)) task.due = values.due;
+      applyTaskDetails(task, draft, values);
       return backlog;
     }, draft.id ? 'изменена задача ' + draft.id : 'задача вручную: ' + values.title);
   }
@@ -1121,9 +1192,17 @@
     var draft = taskDraft;
     var values = {
       title: $('taskTitle').value.trim(), day: $('taskDay').value || null,
-      due: $('taskDue').value || null, block: $('taskBlock').value
+      due: $('taskDue').value || null, block: $('taskBlock').value,
+      important: $('taskImportant').checked,
+      subtasks: Array.from($('taskSubtasks').querySelectorAll('input'), function (input) {
+        return { id: input.dataset.id, title: input.value.trim() };
+      })
     };
     if (!values.title) { $('taskTitle').focus(); return; }
+    if (values.subtasks.some(function (step) { return !step.title; })) {
+      status($('taskFormStatus'), 'Введите название подзадачи или удалите пустую строку.', 'err');
+      return;
+    }
     $('taskSave').disabled = true;
     $('taskCancel').disabled = true;
     status($('taskFormStatus'), 'Сохраняю…', '');
@@ -1151,6 +1230,89 @@
     return isNaN(d.getTime()) ? '' : d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
   }
 
+  function updateTaskDetails(id, statusId, control, mutate) {
+    var shelf = statusId === 'staleStatus';
+    var st = $(statusId);
+    control.disabled = true;
+    status(st, 'Сохраняю…', '');
+    return updateJson(REPO_DATA, shelf ? 'stale.json' : 'backlog.json', function (data) {
+      var tasks = (shelf ? data.items : data.tasks) || [];
+      var task = tasks.find(function (t) { return t.id === id && (shelf ? !t.archived_at : t.status === 'open'); });
+      if (!task) throw new Error('Задача уже закрыта или перемещена. Обновите список.');
+      mutate(task);
+      return data;
+    }, 'обновлена задача ' + id).then(function () {
+      return shelf ? loadStale(true) : refreshTaskViews();
+    }).then(function () {
+      status(st, 'Сохранено.', 'ok');
+      return true;
+    }).catch(function (err) {
+      status(st, err.message, 'err');
+      return false;
+    }).finally(function () { control.disabled = false; });
+  }
+
+  function taskTitleRow(task, tag, statusId, editable) {
+    var row = el('div', 'task-title-row');
+    row.appendChild(el(tag, tag === 'div' ? 't' : null, task.title));
+    var important = task.important === true;
+    if (editable) {
+      var star = el('button', 'priority-star', important ? '★' : '☆');
+      star.setAttribute('aria-pressed', String(important));
+      star.setAttribute('aria-label', 'Важная задача: ' + task.title);
+      star.title = important ? 'Снять отметку «Важно»' : 'Отметить как важную';
+      star.addEventListener('click', function () {
+        updateTaskDetails(task.id, statusId, star, function (saved) { saved.important = !important; });
+      });
+      row.appendChild(star);
+    } else if (important) {
+      var mark = el('span', 'priority-mark', '★');
+      mark.setAttribute('role', 'img');
+      mark.setAttribute('aria-label', 'Важно');
+      row.appendChild(mark);
+    }
+    return row;
+  }
+
+  function appendTaskChecklist(parent, task, statusId, editable) {
+    var steps = taskSubtasks(task);
+    if (!steps.length) return;
+    var key = statusId + '/' + task.id;
+    var details = el('details', 'task-checklist');
+    details.open = openChecklists.has(key);
+    details.addEventListener('toggle', function () {
+      if (!details.isConnected) return;
+      if (details.open) openChecklists.add(key);
+      else openChecklists.delete(key);
+    });
+    var done = steps.filter(function (step) { return step.done === true; }).length;
+    details.appendChild(el('summary', null, 'Подзадачи · ' + done + ' из ' + steps.length));
+    var list = el('ul');
+    steps.forEach(function (step) {
+      var item = el('li');
+      var label = el('label', 'checklist-line');
+      var check = el('input');
+      check.type = 'checkbox';
+      check.checked = step.done === true;
+      check.disabled = !editable;
+      check.addEventListener('change', function () {
+        var done = check.checked;
+        updateTaskDetails(task.id, statusId, check, function (saved) {
+          var subtask = taskSubtasks(saved).find(function (s) { return s.id === step.id; });
+          if (!subtask) throw new Error('Подзадача уже удалена. Обновите список.');
+          subtask.done = done;
+        }).then(function (ok) { if (!ok) check.checked = !done; });
+      });
+      label.append(check, el('span', null, step.title));
+      item.appendChild(label);
+      list.appendChild(item);
+    });
+    details.appendChild(list);
+    parent.appendChild(details);
+  }
+
+  function importantFirst(a, b) { return Number(b.important === true) - Number(a.important === true); }
+
   function taskRow(t, day) {
     var cls = 'task' + (t.status === 'done' ? ' done' : (t.status === 'skipped' ? ' skipped' : ''));
     if (BLOCK_TITLES[t.block]) cls += ' blk-' + t.block;
@@ -1161,7 +1323,8 @@
     box.disabled = day !== mskToday();
 
     var body = el('div', 'body');
-    body.appendChild(el('div', 't', t.title));
+    var editable = t.shared && t.status !== 'done';
+    body.appendChild(taskTitleRow(t, 'div', 'planStatus', editable));
     if (t.after_title) body.appendChild(el('div', 'after', 'после: ' + t.after_title));
 
     var bits = [];
@@ -1173,6 +1336,7 @@
       if (bits.length) meta.appendChild(el('span', t.due && t.due < mskToday() && t.status !== 'done' ? 'tag hot' : null, bits.join(' · ')));
       body.appendChild(meta);
     }
+    appendTaskChecklist(body, t, 'planStatus', editable);
 
     var skip = el('button', 'skip', t.status === 'skipped' ? '↺' : '✕');
     skip.setAttribute('aria-label', t.status === 'skipped' ? 'Вернуть в работу' : 'Пропустить сегодня');
@@ -1347,7 +1511,7 @@
       body.appendChild(el('div', 'empty', 'На этот день задач нет. Нажмите «＋ Задача», чтобы запланировать дело.'));
     } else {
       ['morning', 'afternoon', 'evening'].forEach(function (block) {
-        var inBlock = tasks.filter(function (t) { return t.block === block; });
+        var inBlock = tasks.filter(function (t) { return t.block === block; }).sort(importantFirst);
         if (!inBlock.length) return;
         body.appendChild(el('div', 'block-title blk-' + block, BLOCK_TITLES[block]));
         inBlock.forEach(function (t) { body.appendChild(taskRow(t, plan.date)); });
@@ -1508,7 +1672,7 @@
     row.appendChild(box);
 
     var body = el('div', 'body');
-    body.appendChild(el('div', 't', t.title));
+    body.appendChild(taskTitleRow(t, 'div', 'allStatus', !done));
     if (t.after && titles.has(t.after)) body.appendChild(el('div', 'after', 'после: ' + titles.get(t.after)));
 
     var meta = el('div', 'meta');
@@ -1518,6 +1682,7 @@
     if (t.carry_count) meta.appendChild(el('span', 'tag' + (t.carry_count >= 2 ? ' hot' : ''), 'перенос ' + t.carry_count));
     if (t.est_min) meta.appendChild(document.createTextNode(t.est_min + ' мин'));
     if (meta.childNodes.length) body.appendChild(meta);
+    appendTaskChecklist(body, t, 'allStatus', !done);
     row.appendChild(body);
 
     if (!done) {
@@ -1540,7 +1705,7 @@
 
   function renderAll(backlog, plan) {
     var body = $('allBody');
-    var previousHistory = body.querySelector('details');
+    var previousHistory = body.querySelector('.task-history');
     var historyOpen = previousHistory && previousHistory.open;
     body.textContent = '';
     var tasks = (backlog && backlog.tasks) || [];
@@ -1555,13 +1720,14 @@
       backlog: { title: 'Без даты', tasks: [] }
     };
     var completed = [];
+    var importantOnly = $('allImportant').getAttribute('aria-pressed') === 'true';
     tasks.forEach(function (t) {
       var row = planned.get(t.id);
       if (t.status === 'done' || (t.status === 'open' && row && row.status === 'done')) {
-        completed.push(t);
+        if (!importantOnly) completed.push(t);
         return;
       }
-      if (t.status !== 'open') return;
+      if (t.status !== 'open' || (importantOnly && t.important !== true)) return;
       var group;
       if (t.due && t.due < today) group = groups.overdue;
       else if (row || t.due === today) group = groups.today;
@@ -1578,11 +1744,12 @@
     var count = 0;
     Object.values(groups).forEach(function (group) {
       if (!group.tasks.length) return;
+      group.tasks.sort(importantFirst);
       count += group.tasks.length;
       body.appendChild(el('h2', 'block-title', group.title + ' (' + group.tasks.length + ')'));
       group.tasks.forEach(function (t) { body.appendChild(backlogRow(t, planned.get(t.id), titles, today)); });
     });
-    if (!count) body.appendChild(el('div', 'empty', 'Открытых задач нет. Нажмите «＋ Задача», чтобы добавить дело.'));
+    if (!count) body.appendChild(el('div', 'empty', importantOnly ? 'Открытых важных задач нет.' : 'Открытых задач нет. Нажмите «＋ Задача», чтобы добавить дело.'));
     if (completed.length) {
       completed.sort(function (a, b) { return String(b.done_at || '').localeCompare(a.done_at || ''); });
       var history = el('details', 'task-history');
@@ -1643,13 +1810,14 @@
 
   function staleCard(item) {
     var card = el('div', 'card stale-item');
-    card.appendChild(el('h3', null, item.title));
+    card.appendChild(taskTitleRow(item, 'h3', 'staleStatus', !item.archived_at));
 
     var bits = [];
     if (item.due) bits.push('срок ' + ddmm(item.due));
     if (item.carry_count) bits.push('переносов ' + item.carry_count);
     if (item.decision_note) bits.push(item.decision_note);
     card.appendChild(el('div', 'meta', bits.join(' · ')));
+    appendTaskChecklist(card, item, 'staleStatus', !item.archived_at);
 
     var actions = el('div', 'row task-actions');
     card.appendChild(actions);
@@ -1665,6 +1833,9 @@
     var archive = el('button', null, 'В архив');
     archive.addEventListener('click', function () { archiveStale([item.id], true); });
     actions.appendChild(archive);
+    var edit = el('button', null, 'Изменить');
+    edit.addEventListener('click', function () { editTask(item, null, 'staleStatus'); });
+    actions.appendChild(edit);
 
     if (localMode) return card;
     var options = el('details', 'task-history');
@@ -1701,7 +1872,7 @@
     var open = !!(oldArchive && oldArchive.open);
     body.textContent = '';
     var items = (data && data.items) || [];
-    shelfItems = items.filter(function (item) { return !item.archived_at; });
+    shelfItems = items.filter(function (item) { return !item.archived_at; }).sort(importantFirst);
     $('staleClear').hidden = !shelfItems.length;
     if (!shelfItems.length) body.appendChild(el('div', 'empty', 'Полка свободна. Можно оставить здесь то, что подождёт.'));
     shelfItems.forEach(function (item) { body.appendChild(staleCard(item)); });
@@ -1717,15 +1888,26 @@
   }
 
   function saveStaleTask(values, draft) {
-    return readPlannerJson('backlog.json').then(function (backlog) {
+    var readBacklog = draft.id ? Promise.resolve(null) : readPlannerJson('backlog.json');
+    return readBacklog.then(function (backlog) {
       return updateJson(REPO_DATA, 'stale.json', function (data) {
         var items = data.items || (data.items = []);
-        if (draft.newId && items.some(function (item) { return item.id === draft.newId; })) return null;
-        var taken = items.concat((backlog && backlog.tasks) || []).map(function (item) { return item.id; });
-        draft.newId = draft.newId || newTaskId(taken);
-        items.push({ id: draft.newId, title: values.title, due: values.due, first_seen: mskToday(), carry_count: 0 });
+        var task;
+        if (draft.id) {
+          task = items.find(function (item) { return item.id === draft.id && !item.archived_at; });
+          if (!task) throw new Error('Дело уже перемещено. Обновите полку.');
+        } else {
+          if (draft.newId && items.some(function (item) { return item.id === draft.newId; })) return null;
+          var taken = items.concat((backlog && backlog.tasks) || []).map(function (item) { return item.id; });
+          draft.newId = draft.newId || newTaskId(taken);
+          task = { id: draft.newId, first_seen: mskToday(), carry_count: 0 };
+          items.push(task);
+        }
+        if (!draft.id || values.title !== draft.title) task.title = values.title;
+        if (!draft.id || values.due !== (draft.due || null)) task.due = values.due;
+        applyTaskDetails(task, draft, values);
         return data;
-      }, 'на полку: ' + values.title);
+      }, draft.id ? 'изменено дело на полке ' + draft.id : 'на полку: ' + values.title);
     });
   }
 
@@ -1765,6 +1947,7 @@
           if (tasks.some(function (task) { return task.id === id; })) return null;
           tasks.push({
             id: id, title: item.title, due: item.due || null, source: item.source || null,
+            important: item.important === true, subtasks: taskSubtasks(item),
             est_min: item.est_min || null, decision_note: item.decision_note || null,
             first_seen: item.first_seen || mskToday(), carry_count: 0, last_carry_date: null,
             last_planned_date: null, status: 'open', done_at: null
@@ -2222,7 +2405,10 @@
           return !item || typeof item.id !== 'string' || !item.id.trim() || typeof item.title !== 'string' || !item.title.trim() ||
             (item.due != null && typeof item.due !== 'string') ||
             (item.scheduled_date != null && typeof item.scheduled_date !== 'string') ||
-            (item.not_before != null && typeof item.not_before !== 'string');
+            (item.not_before != null && typeof item.not_before !== 'string') ||
+            (item.subtasks != null && (!Array.isArray(item.subtasks) || item.subtasks.some(function (step) {
+              return !step || typeof step.id !== 'string' || !step.id.trim() || typeof step.title !== 'string' || !step.title.trim();
+            })));
         })) throw new Error('Проверьте формат файла «' + file.name + '».');
         return { key: key, rows: parsed[key] };
       }).catch(function (err) {
@@ -3304,6 +3490,15 @@
     openTaskEditor({ day: $('planDay').value || mskToday(), statusId: 'planStatus' });
   });
   $('allAdd').addEventListener('click', function () { openTaskEditor({ statusId: 'allStatus' }); });
+  $('allImportant').addEventListener('click', function () {
+    this.setAttribute('aria-pressed', String(this.getAttribute('aria-pressed') !== 'true'));
+    loadAll(false);
+  });
+  $('taskSubtaskAdd').addEventListener('click', function () {
+    var taken = taskSubtasks(taskDraft).map(function (step) { return step.id; });
+    $('taskSubtasks').querySelectorAll('input').forEach(function (input) { taken.push(input.dataset.id); });
+    subtaskField({ id: newTaskId(taken), title: '' }).focus();
+  });
   $('taskDay').addEventListener('change', syncTaskBlock);
   $('taskToday').addEventListener('click', function () { $('taskDay').value = mskToday(); syncTaskBlock(); });
   $('taskTomorrow').addEventListener('click', function () { $('taskDay').value = shiftPlanDay(mskToday(), 1); syncTaskBlock(); });
