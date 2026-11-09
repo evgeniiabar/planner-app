@@ -109,6 +109,45 @@
   .welcome.shelf::after { content: '✦'; color: #d6c3ee; }
   .welcome h2 { font-size: clamp(23px, 5vw, 32px); line-height: 1.15; margin: 0 0 7px; }
   .welcome p { margin: 0; }
+  .plan-welcome {
+    display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px;
+    background: linear-gradient(120deg, #e9f2cb, #fff0bc);
+    border-color: #dbe5bc; color: #2f4635;
+  }
+  .plan-welcome::after { content: '✧'; color: #d3dc96; top: -40%; right: 14%; }
+  .plan-mascot {
+    width: clamp(64px, 19vw, 112px); height: auto; aspect-ratio: 1;
+    border: 3px solid #fffaf1; border-radius: 25%; transform: rotate(7deg);
+    box-shadow: 0 4px 0 rgb(80 109 49 / .16);
+  }
+  .plan-progress {
+    display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 8px 12px;
+    padding: 10px 14px 12px; margin-top: 8px; border: 1px solid #d8e5c7;
+    border-radius: 14px; background: #f1f7e7; color: #345442; font-size: 13px;
+  }
+  .plan-progress progress {
+    grid-column: 1 / -1; appearance: none; width: 100%; height: 9px;
+    border: 0; border-radius: 999px; overflow: hidden; background: #dce8c9; accent-color: #58865a;
+  }
+  .plan-progress progress::-webkit-progress-bar { background: #dce8c9; }
+  .plan-progress progress::-webkit-progress-value { background: #58865a; border-radius: 999px; }
+  .plan-progress progress::-moz-progress-bar { background: #58865a; border-radius: 999px; }
+  .completion-toast {
+    position: fixed; z-index: 2; inset-inline: 0; bottom: calc(82px + env(safe-area-inset-bottom));
+    margin-inline: auto; width: max-content; max-width: calc(100% - 24px); pointer-events: none;
+    display: flex; align-items: center; gap: 9px; padding: 8px 14px 8px 8px;
+    border: 1px solid #9fc097; border-radius: 999px; background: #e6f3d8; color: #284a34;
+    font-weight: 750; box-shadow: 0 4px 16px rgb(48 75 35 / .16);
+    animation: frog-hop .34s ease-out both;
+  }
+  .completion-toast img { border-radius: 50%; }
+  .completion-toast .sparkles { color: #925814; }
+  @keyframes frog-hop {
+    from { transform: translateY(10px) scale(.94); }
+    65% { transform: translateY(-3px) scale(1.03); }
+    to { transform: translateY(0) scale(1); }
+  }
+  @media (prefers-reduced-motion: reduce) { .completion-toast { animation: none; } }
   button.add-task { color: var(--accent-ink); background: var(--accent); border-color: var(--accent); font-weight: 700; }
   .mode-card { margin-top: 0; }
 
@@ -313,6 +352,7 @@
     border-radius: 999px; align-self: flex-start;
     display: inline-block;
   }
+  .block-title svg { width: 16px; height: 16px; margin-inline-end: 5px; vertical-align: -3px; }
   .task {
     display: flex;
     align-items: flex-start;
@@ -407,27 +447,57 @@
     justify-content: center;
     border-top: 1px solid var(--line);
     background: var(--bg);
-    padding-bottom: env(safe-area-inset-bottom);
+    padding: 3px 0 env(safe-area-inset-bottom);
   }
   nav button {
     flex: 1;
-    max-width: 110px;
+    max-width: 96px;
     border: 0;
     background: transparent;
     color: var(--dim);
-    border-radius: 0;
-    font-size: 10px;
+    border-radius: 12px;
+    font-size: clamp(9px, 2.55vw, 12px);
     letter-spacing: -.02em;
-    min-height: 56px;
-    padding: 0 1px;
+    line-height: 1.15;
+    min-height: 62px;
+    padding: 5px 0;
     min-width: 0;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+    white-space: nowrap;
   }
-  nav button { font-weight: 500; }
-  nav button[aria-selected="true"] { color: var(--accent); background: var(--accent-soft); font-weight: 750; box-shadow: inset 0 2px 0 var(--accent); }
-  @media (min-width: 600px) { nav button { font-size: 13px; } }
+  .nav-sticker {
+    display: grid; place-items: center; width: 29px; height: 29px; border-radius: 10px;
+    background: var(--sticker-bg); color: var(--sticker-ink);
+  }
+  .nav-sticker svg { width: 19px; height: 19px; }
+  .doodle { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  nav button[aria-selected="true"] { color: var(--sticker-ink); background: var(--sticker-bg); font-weight: 750; }
+  nav button[aria-selected="true"] .nav-sticker { background: rgb(255 255 255 / .7); }
+  nav button[data-tab="inbox"] { --sticker-bg: #ffe6d2; --sticker-ink: #8b492d; }
+  nav button[data-tab="plan"]  { --sticker-bg: #e4efce; --sticker-ink: #345b36; }
+  nav button[data-tab="all"]   { --sticker-bg: #dcecf8; --sticker-ink: #2e5579; }
+  nav button[data-tab="stale"] { --sticker-bg: #eee4f7; --sticker-ink: #65467e; }
+  nav button[data-tab="food"]  { --sticker-bg: #ffedc4; --sticker-ink: #795016; }
+  nav button[data-tab="diary"] { --sticker-bg: #f9e1ec; --sticker-ink: #864462; }
+  nav button[data-tab="notes"] { --sticker-bg: #dbefe7; --sticker-ink: #35675d; }
+  nav button[data-tab="events"] { --sticker-bg: #e5e5fa; --sticker-ink: #504c85; }
 </style>
 </head>
 <body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <symbol id="icon-inbox" viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="13" rx="3"/><path d="m4 9 8 6 8-6m-2-6v3m-1.5-1.5h3"/></symbol>
+  <symbol id="icon-plan" viewBox="0 0 24 24"><rect x="4" y="5.5" width="16" height="15" rx="3"/><path d="M8 3v5m8-5v5M4 10h16m-12 5 2.5 2.5L16 13"/></symbol>
+  <symbol id="icon-all" viewBox="0 0 24 24"><path d="M11 6h9m-9 6h9m-9 6h9M4 6l1.4 1.4L8 4.7"/><circle cx="6" cy="12" r="1.3"/><circle cx="6" cy="18" r="1.3"/></symbol>
+  <symbol id="icon-stale" viewBox="0 0 24 24"><path d="M3 18h15a3 3 0 0 0 0-6h-1v2M6 17a5 5 0 1 1 8-4c0 2-1.3 3-2.8 3-2.8 0-2.9-3.6-.8-3.6M18 12V9m2 3 1-2"/></symbol>
+  <symbol id="icon-food" viewBox="0 0 24 24"><path d="M4 12h16c0 4.5-3.4 7-8 7s-8-2.5-8-7Zm2 7h12m-9-9c-2.5-2.5 2-3 0-5m6 5c-2.5-2.5 2-3 0-5"/></symbol>
+  <symbol id="icon-diary" viewBox="0 0 24 24"><rect x="5" y="4" width="14" height="16" rx="2.5"/><path d="M8 4v16m5.5-6-2.3-2.3c-1.1-1.2.5-3 1.8-1.8l.5.5.5-.5c1.3-1.2 2.9.6 1.8 1.8L13.5 14Z"/></symbol>
+  <symbol id="icon-notes" viewBox="0 0 24 24"><path d="m5 15 9.5-9.5a2.1 2.1 0 0 1 3 0l1 1a2.1 2.1 0 0 1 0 3L9 19l-5 1 1-5Zm8-8 4 4m-6 9h9"/></symbol>
+  <symbol id="icon-events" viewBox="0 0 24 24"><path d="M4 6h16v4a2 2 0 0 0 0 4v4H4v-4a2 2 0 0 0 0-4V6Zm8 3v6m-3-3h6"/></symbol>
+  <symbol id="icon-morning" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3M5 5l2 2m10 10 2 2M19 5l-2 2M7 17l-2 2"/></symbol>
+  <symbol id="icon-afternoon" viewBox="0 0 24 24"><path d="M12 20v-8m0 3c-5 0-8-2-8-7 5 0 8 2 8 7Zm0-3c0-4 2.5-6.5 8-7 0 4.5-3 7-8 7Z"/></symbol>
+  <symbol id="icon-evening" viewBox="0 0 24 24"><path d="M18 15.2A7.6 7.6 0 0 1 9 5a7.5 7.5 0 1 0 9 10.2Zm0-10v5m-2.5-2.5h5"/></symbol>
+</svg>
 
 <header>
   <div class="header-name"><img class="header-mascot" src="icons/planner-frog.svg" width="30" height="30" alt=""><h1 id="title">План</h1></div>
@@ -465,7 +535,10 @@
   </section>
 
   <section class="view" id="view-plan" hidden>
-    <div class="welcome"><h2>День в своём темпе</h2><p>Пара дел на сегодня — уже план.</p></div>
+    <div class="welcome plan-welcome">
+      <div><h2>День в своём темпе</h2><p>Один маленький прыжок за раз.</p></div>
+      <img class="plan-mascot" src="icons/planner-frog.svg" width="112" height="112" alt="">
+    </div>
     <div class="row plan-tools">
       <button id="planPrev" aria-label="Предыдущий день">‹</button>
       <input type="date" class="task-date" id="planDay" aria-label="День плана">
@@ -473,6 +546,10 @@
       <button id="planToday">Сегодня</button>
     </div>
     <button class="add-task" id="planAdd">＋ Задача</button>
+    <div class="plan-progress" id="planProgress" hidden>
+      <strong>Прыжки дня</strong><span id="planProgressCount"></span>
+      <progress id="planProgressBar" aria-label="Выполненные задачи плана" value="0"></progress>
+    </div>
     <div class="status" id="planStatus" role="status"></div>
     <div id="planBody"></div>
     <div class="row" style="margin-top:16px"><button id="planReload">Обновить</button></div>
@@ -699,15 +776,20 @@
   </form>
 </dialog>
 
-<nav>
-  <button data-tab="inbox" aria-selected="true">Инбокс</button>
-  <button data-tab="plan" aria-selected="false">План</button>
-  <button data-tab="all" aria-selected="false">Всё</button>
-  <button data-tab="stale" aria-selected="false">Зависло</button>
-  <button data-tab="food" aria-selected="false">Еда</button>
-  <button data-tab="diary" aria-selected="false">Дневник</button>
-  <button data-tab="notes" aria-selected="false">Заметки</button>
-  <button data-tab="events" aria-selected="false">Афиша</button>
+<div class="completion-toast" id="completionToast" aria-hidden="true" hidden>
+  <img src="icons/planner-frog.svg" width="30" height="30" alt="">
+  <span>Ква! Задача готова</span><span class="sparkles">✦</span>
+</div>
+
+<nav aria-label="Разделы планировщика">
+  <button data-tab="inbox" aria-selected="true"><span class="nav-sticker" aria-hidden="true"><svg class="doodle"><use href="#icon-inbox"/></svg></span>Инбокс</button>
+  <button data-tab="plan" aria-selected="false"><span class="nav-sticker" aria-hidden="true"><svg class="doodle"><use href="#icon-plan"/></svg></span>План</button>
+  <button data-tab="all" aria-selected="false"><span class="nav-sticker" aria-hidden="true"><svg class="doodle"><use href="#icon-all"/></svg></span>Всё</button>
+  <button data-tab="stale" aria-selected="false"><span class="nav-sticker" aria-hidden="true"><svg class="doodle"><use href="#icon-stale"/></svg></span>Зависло</button>
+  <button data-tab="food" aria-selected="false"><span class="nav-sticker" aria-hidden="true"><svg class="doodle"><use href="#icon-food"/></svg></span>Еда</button>
+  <button data-tab="diary" aria-selected="false"><span class="nav-sticker" aria-hidden="true"><svg class="doodle"><use href="#icon-diary"/></svg></span>Дневник</button>
+  <button data-tab="notes" aria-selected="false"><span class="nav-sticker" aria-hidden="true"><svg class="doodle"><use href="#icon-notes"/></svg></span>Заметки</button>
+  <button data-tab="events" aria-selected="false"><span class="nav-sticker" aria-hidden="true"><svg class="doodle"><use href="#icon-events"/></svg></span>Афиша</button>
 </nav>
 
 <script>
@@ -1079,6 +1161,7 @@
   var allRequest = 0;
   var staleRequest = 0;
   var taskViewSnapshots = {};
+  var completionTimer;
   var taskDraft = null;
   var openChecklists = new Set();
 
@@ -1515,13 +1598,26 @@
     }
 
     var tasks = plan.tasks || [];
+    var finished = tasks.filter(function (task) { return task.status === 'done'; }).length;
+    $('planProgress').hidden = !tasks.length;
+    $('planProgressCount').textContent = finished + ' из ' + tasks.length;
+    $('planProgressBar').max = tasks.length || 1;
+    $('planProgressBar').value = finished;
     if (!tasks.length) {
       body.appendChild(el('div', 'empty', 'На этот день задач нет. Нажмите «＋ Задача», чтобы запланировать дело.'));
     } else {
       ['morning', 'afternoon', 'evening'].forEach(function (block) {
         var inBlock = tasks.filter(function (t) { return t.block === block; }).sort(importantFirst);
         if (!inBlock.length) return;
-        body.appendChild(el('div', 'block-title blk-' + block, BLOCK_TITLES[block]));
+        var heading = el('div', 'block-title blk-' + block, BLOCK_TITLES[block]);
+        var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        var icon = document.createElementNS(svg.namespaceURI, 'use');
+        svg.setAttribute('class', 'doodle');
+        svg.setAttribute('aria-hidden', 'true');
+        icon.setAttribute('href', '#icon-' + block);
+        svg.appendChild(icon);
+        heading.prepend(svg);
+        body.appendChild(heading);
         inBlock.forEach(function (t) { body.appendChild(taskRow(t, plan.date)); });
       });
     }
@@ -1604,7 +1700,13 @@
       return data;
     }, 'задача: ' + id + ' → ' + next).then(function () {
       return refreshTaskViews().then(function () {
-        status(st, 'Сохранено.', 'ok');
+        status(st, next === 'done' ? 'Задача выполнена.' : 'Сохранено.', 'ok');
+        if (next === 'done') {
+          var toast = $('completionToast');
+          toast.hidden = false;
+          clearTimeout(completionTimer);
+          completionTimer = setTimeout(function () { toast.hidden = true; }, 2300);
+        }
       });
     }).catch(function (err) {
       status(st, err.message + ' Отметка не сохранена.', 'err');
@@ -1666,6 +1768,7 @@
     var request = ++planRequest;
     if (!quiet) {
       $('planBody').textContent = '';
+      $('planProgress').hidden = true;
       status($('planStatus'), 'Загружаю…', '');
     }
     return readDay(date).then(function (data) {
