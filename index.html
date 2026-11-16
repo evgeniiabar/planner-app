@@ -576,7 +576,11 @@
     </div>
     <div class="status" id="planStatus" role="status"></div>
     <div id="planBody"></div>
-    <div class="row" style="margin-top:16px"><button id="planReload">Обновить</button></div>
+    <div class="row" style="margin-top:16px">
+      <button id="planReload">Обновить</button>
+      <button id="syncCalendar" hidden>Обновить Google Календарь</button>
+    </div>
+    <div class="status" id="calendarStatus" role="status" hidden></div>
   </section>
 
   <section class="view" id="view-all" hidden>
@@ -664,6 +668,8 @@
     </div>
     <div class="status" id="notesStatus"></div>
 
+    <label for="nFilter">Показать заметки по теме</label>
+    <select id="nFilter"><option value="">Все темы</option></select>
     <div id="nBody"></div>
 
     <div class="card">
@@ -1170,9 +1176,11 @@
     });
   }
 
-  function mskToday() {
-    return new Date(Date.now() + 3 * 3600 * 1000).toISOString().slice(0, 10);
+  function mskDateAt(timestamp) {
+    return Number.isFinite(timestamp) ? new Date(timestamp + 3 * 3600 * 1000).toISOString().slice(0, 10) : null;
   }
+
+  function mskToday() { return mskDateAt(Date.now()); }
 
   function el(tag, cls, text) {
     var n = document.createElement(tag);
@@ -1460,6 +1468,7 @@
     var bits = [];
     if (t.est_min) bits.push(t.est_min + ' мин');
     if (t.due) bits.push('срок ' + ddmm(t.due));
+    if (t.carried_from) bits.push('перенос с ' + ddmm(t.carried_from));
     if (t.carry_count || bits.length) {
       var meta = el('div', 'meta');
       if (t.carry_count) meta.appendChild(el('span', 'tag' + (t.carry_count >= 2 ? ' hot' : ''), 'перенос ' + t.carry_count));
@@ -1486,7 +1495,7 @@
     if (t.status !== 'done') {
       if (t.shared) {
         var edit = el('button', 'nextbtn', 'Изменить');
-        edit.addEventListener('click', function () { editTask(t, day, 'planStatus'); });
+        edit.addEventListener('click', function () { editTask(t, t.scheduled_date || day, 'planStatus'); });
         body.appendChild(edit);
       }
       return row;
@@ -1686,16 +1695,22 @@
     return !task.unscheduled_at || Date.parse(task.unscheduled_at) < Date.parse(storedPlan.generated_at);
   }
 
-  function mergeDayPlan(date, backlog, storedPlan) {
+  function carryFrom(task, date) {
+    if (task.status !== 'open' || (task.not_before && task.not_before > date)) return null;
+    var from = task.scheduled_date || (!task.unscheduled_at && task.last_planned_date);
+    return from && from < date ? from : null;
+  }
+
+  function mergeDayPlan(date, backlog, storedPlan, today, earlierPlans) {
     var plan = Object.assign({}, storedPlan, { date: date, tasks: [] });
     var tasks = (backlog && backlog.tasks) || [];
     var byId = new Map(tasks.map(function (t) { return [t.id, t]; }));
     var storedRows = (storedPlan && storedPlan.tasks) || [];
     var shown = new Set();
 
-    function addRow(task, row) {
-      if (task.status === 'dropped' || !matchesPlan(task, date, storedPlan || {})) return;
+    function addRow(task, row, from) {
       var next = Object.assign({}, row, task, { shared: true });
+      next.carried_from = from || null;
       next.block = task.scheduled_block || (row && row.block) || 'afternoon';
       next.after_title = task.after && byId.has(task.after) ? byId.get(task.after).title : (row && row.after_title);
       if (task.status === 'done') next.status = 'done';
@@ -1707,11 +1722,21 @@
 
     storedRows.forEach(function (row) {
       var task = byId.get(row.id);
-      if (task) addRow(task, row);
-      else plan.tasks.push(row);
+      if (!task) plan.tasks.push(row);
+      else if (task.status !== 'dropped' && matchesPlan(task, date, storedPlan)) addRow(task, row);
     });
     tasks.forEach(function (task) {
-      if (task.scheduled_date === date && !shown.has(task.id)) addRow(task, null);
+      if (shown.has(task.id) || task.status === 'dropped') return;
+      if (task.scheduled_date === date) { addRow(task, null); return; }
+      // После отметки задача остаётся в плане того дня, когда её закрыли.
+      if (task.status === 'done' && task.done_at && (task.scheduled_date || task.last_planned_date) < date &&
+          mskDateAt(Date.parse(task.done_at)) === date) { addRow(task, null); return; }
+      var from = date === today && carryFrom(task, date);
+      if (!from) return;
+      var earlier = earlierPlans.get(from);
+      var prior = earlier && (earlier.tasks || []).find(function (row) { return row.id === task.id; });
+      if (!task.status_updated_at && prior && prior.status === 'done') return;
+      addRow(task, prior ? { block: prior.block } : null, from);
     });
     return plan;
   }
@@ -1761,9 +1786,30 @@
     }
   }
 
-  function readDay(date) {
-    return Promise.all([readPlannerJson('backlog.json'), readPlannerJson('plans/' + date + '.json')]).then(function (r) {
-      return { backlog: r[0], plan: mergeDayPlan(date, r[0], r[1]) };
+  function readDay(date, includeCalendar) {
+    var today = mskToday();
+    var calendar = includeCalendar && !localMode ? readPlannerJson('calendar/snapshot.json').catch(function () { return null; }) : null;
+    return Promise.all([readPlannerJson('backlog.json'), readPlannerJson('plans/' + date + '.json'), calendar]).then(function (r) {
+      var backlog = r[0];
+      var days = new Set();
+      if (date === today) ((backlog && backlog.tasks) || []).forEach(function (task) {
+        var from = !task.scheduled_date && carryFrom(task, date);
+        if (from) days.add(from);
+      });
+      return Promise.all(Array.from(days, function (day) {
+        return readPlannerJson('plans/' + day + '.json').then(function (plan) { return [day, plan]; });
+      })).then(function (earlier) {
+        var plan = mergeDayPlan(date, backlog, r[1], today, new Map(earlier));
+        var snapshot = r[2];
+        if (snapshot && snapshot.from <= date && date <= snapshot.through && Array.isArray(snapshot.items)) {
+          var google = snapshot.items.filter(function (event) { return event.date === date; });
+          var planned = (plan.events || []).filter(function (event) { return !String(event.id).startsWith('google:'); });
+          plan.events = google.concat(planned).sort(function (a, b) {
+            return (a.start || '00:00').localeCompare(b.start || '00:00');
+          });
+        }
+        return { backlog: backlog, plan: plan };
+      });
     });
   }
 
@@ -1810,7 +1856,7 @@
       $('planProgress').hidden = true;
       status($('planStatus'), 'Загружаю…', '');
     }
-    return readDay(date).then(function (data) {
+    return readDay(date, true).then(function (data) {
       if (request !== planRequest) return;
       paintTaskView('plan', data.plan, background, function () { renderPlan(data.plan); });
     }).catch(function (err) {
@@ -1850,7 +1896,8 @@
     if (t.after && titles.has(t.after)) body.appendChild(el('div', 'after', 'после: ' + titles.get(t.after)));
 
     var meta = el('div', 'meta');
-    if (t.scheduled_date) meta.appendChild(el('span', 'tag', 'в плане ' + ddmm(t.scheduled_date)));
+    if (planRow && planRow.carried_from) meta.appendChild(el('span', 'tag', 'перенос с ' + ddmm(planRow.carried_from)));
+    else if (t.scheduled_date) meta.appendChild(el('span', 'tag', 'в плане ' + ddmm(t.scheduled_date)));
     if (t.not_before && !t.scheduled_date && t.not_before > today) meta.appendChild(el('span', 'tag', 'не раньше ' + ddmm(t.not_before)));
     if (t.due) meta.appendChild(el('span', 'tag' + (!done && t.due < today ? ' hot' : ''), 'срок ' + ddmm(t.due)));
     if (t.carry_count) meta.appendChild(el('span', 'tag' + (t.carry_count >= 2 ? ' hot' : ''), 'перенос ' + t.carry_count));
@@ -2393,7 +2440,7 @@
 
   /* ---------- ручной запуск прогонов ---------- */
 
-  var WORKFLOWS = { morning: 'morning.yml', evening: 'evening.yml', events: 'events.yml' };
+  var WORKFLOWS = { morning: 'morning.yml', evening: 'evening.yml', events: 'events.yml', calendar: 'calendar-refresh.yml' };
 
   function runsUrl(file, tail) {
     var owner = get(LS.owner, '').trim();
@@ -2423,6 +2470,7 @@
       }
       if (run.conclusion === 'success') {
         status(st, label + ': готово.', 'ok');
+        if (file === WORKFLOWS.calendar) return refreshTaskViews();
         loadState();
         refreshTaskViews();
         loadFood(true);
@@ -2430,13 +2478,20 @@
         loadEvents(true);
         return;
       }
-      status(st, label + ': прогон упал (' + run.conclusion + '). Данные не тронуты.', 'err');
+      status(st, label + ': не удалось обновить.', 'err');
+      if (run.html_url && /^https:\/\/github\.com\//.test(run.html_url)) {
+        var log = el('a', null, ' Открыть журнал GitHub');
+        log.href = run.html_url;
+        log.target = '_blank';
+        log.rel = 'noopener';
+        st.appendChild(log);
+      }
     }).catch(function (err) {
       status(st, err.message, 'err');
     });
   }
 
-  var RUN_BUTTONS = ['runMorning', 'runEvening', 'runEveningInbox', 'runEvents'];
+  var RUN_BUTTONS = ['runMorning', 'runEvening', 'runEveningInbox', 'runEvents', 'syncCalendar'];
 
   function runWorkflow(kind, label, statusId) {
     var file = WORKFLOWS[kind];
@@ -3144,23 +3199,28 @@
 
   function renderNotes(data) {
     var topics = (data && data.topics) || [];
-    var items = (data && data.items) || [];
     var keep = $("nTopic").value;
     topicOptions($("nTopic"), topics, keep);
     renderTopicList(topics);
 
+    topicOptions($("nFilter"), [{ id: '', name: 'Все темы' }].concat(topics), get('planner.noteTopicFilter', ''));
+    renderNoteEntries(data);
+  }
+
+  function renderNoteEntries(data) {
+    var topics = (data && data.topics) || [];
+    var items = (data && data.items) || [];
+    var filter = $("nFilter").value;
     var body = $("nBody");
     body.textContent = "";
-    if (!items.length) {
-      body.appendChild(el("div", "empty", "Заметок пока нет. Пишите сюда или диктуйте в инбокс, вечерний прогон разложит по темам."));
-      return;
-    }
     topics.forEach(function (topic) {
+      if (filter && topic.id !== filter) return;
       var mine = items.filter(function (n) { return n.topic_id === topic.id; });
       if (!mine.length) return;
       body.appendChild(el("div", "block-title", topic.name + " (" + mine.length + ")"));
       mine.slice().reverse().forEach(function (n) { body.appendChild(noteRow(n, topics)); });
     });
+    if (!body.hasChildNodes()) body.appendChild(el("div", "empty", filter ? "В этой теме пока нет заметок." : "Заметок пока нет."));
   }
 
   function loadNotes(quiet) {
@@ -3745,6 +3805,10 @@
     importTaskFiles(files);
   });
   $('planReload').addEventListener('click', function () { loadPlan(false); });
+  $('syncCalendar').addEventListener('click', function () {
+    $('calendarStatus').hidden = false;
+    runWorkflow('calendar', 'Google Календарь', 'calendarStatus');
+  });
   $('planDay').addEventListener('change', function () { loadPlan(false); });
   $('planPrev').addEventListener('click', function () {
     $('planDay').value = shiftPlanDay($('planDay').value || mskToday(), -1);
@@ -3812,6 +3876,10 @@
     addTopic(v);
   });
   $('nReload').addEventListener('click', function () { loadNotes(false); });
+  $('nFilter').addEventListener('change', function () {
+    set('planner.noteTopicFilter', this.value);
+    renderNoteEntries(notesCache);
+  });
   $('evReload').addEventListener('click', function () { loadEvents(false); });
   $('segPro').addEventListener('click', function () { showEvStream('pro'); });
   $('segFam').addEventListener('click', function () { showEvStream('family'); });
@@ -3899,6 +3967,7 @@
   $('aiCard').hidden = localMode;
   $('savedAccess').hidden = !get(LS.token, '');
   $('runEvents').hidden = localMode;
+  $('syncCalendar').hidden = localMode;
   if (localMode) $('send').textContent = 'Сохранить';
   renderQueue();
   var showSyncSettings = !localMode && get('planner.showSyncSettings', '') === 'yes';
