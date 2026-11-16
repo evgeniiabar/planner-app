@@ -312,12 +312,17 @@
   [data-task-color="lilac"] { --task-tint: #eee4fa; --task-edge: #9a77bb; }
   .task-checklist { margin: 8px 0 0; font-size: 14px; }
   .task-checklist summary { cursor: pointer; color: var(--accent); }
+  .task-checklist summary progress { width: 54px; height: 7px; margin-inline-start: 8px; vertical-align: middle; accent-color: var(--accent); }
   .task-checklist ul { margin: 6px 0 0; padding: 0; list-style: none; }
-  .checklist-line { display: flex; align-items: flex-start; gap: 8px; margin: 0; padding: 6px 0; color: var(--text); overflow-wrap: anywhere; }
+  .checklist-line { display: flex; align-items: flex-start; gap: 8px; min-height: 38px; margin: 0; padding: 9px 0; color: var(--text); overflow-wrap: anywhere; }
+  .checklist-caption { margin: 8px 0 0; color: var(--dim); font-size: 12px; font-weight: 700; }
+  .checklist-feedback { margin: 4px 0 0; color: var(--accent); font-size: 12px; }
+  .checklist-feedback.err { color: var(--err); }
   .checklist-line input, .priority-field input { flex: 0 0 auto; accent-color: var(--accent); width: 18px; height: 18px; margin: 1px 0 0; }
   .checklist-line input:checked + span { text-decoration: line-through; color: var(--dim); }
   .subtask-editor-row { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
   .subtask-editor-row input { min-width: 0; }
+  .subtask-editor-row .rowbtn:not(:last-child) { min-width: 34px; }
   label { display: block; font-size: 13px; color: var(--dim); margin: 16px 0 6px; }
 
   .status { min-height: 22px; margin-top: 10px; font-size: 14px; color: var(--dim); }
@@ -758,7 +763,9 @@
     </div>
 
     <div class="hint" style="margin-top:18px">
-      Для дневника добавьте доступ к <b>diary</b>, а для кнопок ИИ — право <b>Actions: Read and write</b>. Ключ сохраняется в этом браузере.
+      Для обновления календаря и запуска ИИ ключу нужно право <b>Actions: Read and write</b> на <b>planner-data</b>.
+      <a href="https://github.com/settings/personal-access-tokens" target="_blank" rel="noopener">Открыть настройки ключа GitHub</a>.
+      Для дневника добавьте доступ к <b>diary</b>. Ключ сохраняется в этом браузере.
     </div>
     </details>
   </section>
@@ -956,16 +963,20 @@
     var headers = {
       'Authorization': 'Bearer ' + token,
       'Accept': 'application/vnd.github+json',
-      'X-GitHub-Api-Version': '2022-11-28'
+      'X-GitHub-Api-Version': opts.version || '2022-11-28'
     };
     if (opts.body) headers['Content-Type'] = 'application/json';
+    var controller = opts.timeout ? new AbortController() : null;
+    var timer = controller && setTimeout(function () { controller.abort(); }, opts.timeout);
 
     return fetch(API + path, {
       method: opts.method || 'GET',
       headers: headers,
       body: opts.body ? JSON.stringify(opts.body) : undefined,
+      signal: controller ? controller.signal : undefined,
       cache: 'no-store'
     }).catch(function () {
+      if (controller && controller.signal.aborted) throw new ApiError('GitHub долго не отвечает.', 0, 'timeout');
       throw new ApiError('Нет сети.', 0, 'network');
     }).then(function (res) {
       var exp = res.headers.get('github-authentication-token-expiration');
@@ -996,6 +1007,11 @@
         }
         throw new ApiError('GitHub ответил ' + res.status + '. ' + ((data && data.message) || ''), res.status, 'http');
       });
+    }).catch(function (err) {
+      if (controller && controller.signal.aborted) throw new ApiError('GitHub долго не отвечает.', 0, 'timeout');
+      throw err;
+    }).finally(function () {
+      if (controller) clearTimeout(timer);
     });
   }
 
@@ -1263,10 +1279,34 @@
     var remove = el('button', 'rowbtn', '✕');
     remove.type = 'button';
     remove.setAttribute('aria-label', 'Удалить подзадачу');
-    remove.addEventListener('click', function () { row.remove(); });
-    row.append(input, remove);
+    remove.addEventListener('click', function () { row.remove(); updateSubtaskOrderButtons(); });
+    var up = el('button', 'rowbtn', '↑');
+    var down = el('button', 'rowbtn', '↓');
+    up.type = down.type = 'button';
+    up.setAttribute('aria-label', 'Поднять подзадачу');
+    down.setAttribute('aria-label', 'Опустить подзадачу');
+    up.addEventListener('click', function () {
+      row.previousElementSibling.before(row);
+      updateSubtaskOrderButtons();
+      (up.disabled ? down : up).focus();
+    });
+    down.addEventListener('click', function () {
+      row.before(row.nextElementSibling);
+      updateSubtaskOrderButtons();
+      (down.disabled ? up : down).focus();
+    });
+    row.append(input, up, down, remove);
     $('taskSubtasks').appendChild(row);
+    updateSubtaskOrderButtons();
     return input;
+  }
+
+  function updateSubtaskOrderButtons() {
+    Array.from($('taskSubtasks').children).forEach(function (row) {
+      var buttons = row.querySelectorAll('button');
+      buttons[0].disabled = !row.previousElementSibling;
+      buttons[1].disabled = !row.nextElementSibling;
+    });
   }
 
   function applyTaskDetails(task, draft, values) {
@@ -1286,6 +1326,16 @@
         task.subtasks.push({ id: step.id, title: step.title, done: false });
       }
     });
+    var expectedOrder = Array.from(original.keys()).filter(function (id) { return edited.has(id); });
+    values.subtasks.forEach(function (step) { if (!original.has(step.id)) expectedOrder.push(step.id); });
+    if (values.subtasks.some(function (step, index) { return step.id !== expectedOrder[index]; })) {
+      var stepOrder = new Map(values.subtasks.map(function (step, index) { return [step.id, index]; }));
+      var ordered = task.subtasks.filter(function (step) { return stepOrder.has(step.id); }).sort(function (a, b) {
+        return stepOrder.get(a.id) - stepOrder.get(b.id);
+      });
+      var index = 0;
+      task.subtasks = task.subtasks.map(function (step) { return stepOrder.has(step.id) ? ordered[index++] : step; });
+    }
   }
 
   function saveTask(values, draft) {
@@ -1367,18 +1417,22 @@
     return isNaN(d.getTime()) ? '' : d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
   }
 
-  function updateTaskDetails(id, statusId, control, mutate) {
-    var shelf = statusId === 'staleStatus';
-    var st = $(statusId);
-    control.disabled = true;
-    status(st, 'Сохраняю…', '');
+  function saveTaskDetails(id, shelf, mutate) {
     return updateJson(REPO_DATA, shelf ? 'stale.json' : 'backlog.json', function (data) {
       var tasks = (shelf ? data.items : data.tasks) || [];
       var task = tasks.find(function (t) { return t.id === id && (shelf ? !t.archived_at : t.status === 'open'); });
       if (!task) throw new Error('Задача уже закрыта или перемещена. Обновите список.');
       mutate(task);
       return data;
-    }, 'обновлена задача ' + id).then(function () {
+    }, 'обновлена задача ' + id);
+  }
+
+  function updateTaskDetails(id, statusId, control, mutate) {
+    var shelf = statusId === 'staleStatus';
+    var st = $(statusId);
+    control.disabled = true;
+    status(st, 'Сохраняю…', '');
+    return saveTaskDetails(id, shelf, mutate).then(function () {
       return shelf ? loadStale(true) : refreshTaskViews();
     }).then(function () {
       status(st, 'Сохранено.', 'ok');
@@ -1422,10 +1476,34 @@
       if (details.open) openChecklists.add(key);
       else openChecklists.delete(key);
     });
-    var done = steps.filter(function (step) { return step.done === true; }).length;
-    details.appendChild(el('summary', null, 'Подзадачи · ' + done + ' из ' + steps.length));
-    var list = el('ul');
-    steps.forEach(function (step) {
+    var summary = el('summary');
+    var count = el('span');
+    var progress = el('progress');
+    progress.max = steps.length;
+    progress.setAttribute('aria-label', 'Прогресс подзадач');
+    summary.append(count, progress);
+    var remaining = el('ul');
+    var finished = el('ul');
+    var finishedTitle = el('p', 'checklist-caption', 'Готово');
+    var feedback = el('p', 'checklist-feedback');
+    feedback.setAttribute('role', 'status');
+    details.append(summary, remaining, finishedTitle, finished, feedback);
+
+    function showProgress() {
+      var countDone = entries.filter(function (entry) { return entry.check.checked; }).length;
+      count.textContent = countDone === steps.length ? 'Все подзадачи готовы' : 'Подзадачи · ' + countDone + ' из ' + steps.length;
+      progress.value = countDone;
+    }
+
+    function organize() {
+      entries.forEach(function (entry) {
+        (entry.check.checked ? finished : remaining).appendChild(entry.item);
+      });
+      finishedTitle.hidden = !finished.childElementCount;
+      showProgress();
+    }
+
+    var entries = steps.map(function (step) {
       var item = el('li');
       var label = el('label', 'checklist-line');
       var check = el('input');
@@ -1434,17 +1512,34 @@
       check.disabled = !editable;
       check.addEventListener('change', function () {
         var done = check.checked;
-        updateTaskDetails(task.id, statusId, check, function (saved) {
+        details.setAttribute('aria-busy', 'true');
+        entries.forEach(function (entry) { entry.check.disabled = true; });
+        feedback.classList.remove('err');
+        feedback.textContent = 'Сохраняю отметку…';
+        showProgress();
+        saveTaskDetails(task.id, statusId === 'staleStatus', function (saved) {
           var subtask = taskSubtasks(saved).find(function (s) { return s.id === step.id; });
           if (!subtask) throw new Error('Подзадача уже удалена. Обновите список.');
           subtask.done = done;
-        }).then(function (ok) { if (!ok) check.checked = !done; });
+        }).then(function () {
+          step.done = done;
+          feedback.textContent = done ? 'Шаг выполнен ✓' : 'Шаг снова в работе';
+          organize();
+        }).catch(function (err) {
+          check.checked = step.done === true;
+          showProgress();
+          feedback.classList.add('err');
+          feedback.textContent = 'Отметка не сохранена. ' + err.message;
+        }).finally(function () {
+          details.removeAttribute('aria-busy');
+          entries.forEach(function (entry) { entry.check.disabled = false; });
+        });
       });
       label.append(check, el('span', null, step.title));
       item.appendChild(label);
-      list.appendChild(item);
+      return { item: item, check: check };
     });
-    details.appendChild(list);
+    organize();
     parent.appendChild(details);
   }
 
@@ -1824,7 +1919,7 @@
     var view = $('view-' + name);
     var activity = $(name + 'Status').textContent;
     return !view.hidden && !$('taskDialog').open &&
-      !view.querySelector('.nextform:not([hidden]), details[open] .note') &&
+      !view.querySelector('.nextform:not([hidden]), details[open] .note, .task-checklist[aria-busy="true"]') &&
       !/^(Сохраняю|Загружаю|Убираю|Добавляю)/.test(activity);
   }
 
@@ -2442,31 +2537,35 @@
 
   var WORKFLOWS = { morning: 'morning.yml', evening: 'evening.yml', events: 'events.yml', calendar: 'calendar-refresh.yml' };
 
+  function actionsPath() {
+    return '/repos/' + encodeURIComponent(get(LS.owner, '').trim()) + '/' + REPO_DATA + '/actions';
+  }
+
   function runsUrl(file, tail) {
-    var owner = get(LS.owner, '').trim();
-    return '/repos/' + owner + '/' + REPO_DATA + '/actions/workflows/' + file + tail;
+    return actionsPath() + '/workflows/' + file + tail;
   }
 
-  function lastRunId(file) {
-    return api(runsUrl(file, '/runs?per_page=1')).then(function (r) {
-      var runs = (r.data && r.data.workflow_runs) || [];
-      return runs.length ? runs[0].id : 0;
-    }).catch(function () { return 0; });
+  function workflowLink(st, file, id) {
+    var path = id ? actionsPath() + '/runs/' + id : runsUrl(file, '');
+    var link = el('a', null, id ? ' Открыть запуск' : ' Открыть в GitHub');
+    link.href = 'https://github.com' + path.slice('/repos'.length);
+    link.target = '_blank';
+    link.rel = 'noopener';
+    st.appendChild(link);
   }
 
-  // Прогон запускается не мгновенно, поэтому ждём появления прогона с новым id,
-  // иначе можно принять прошлый успешный за только что запущенный.
-  function pollRun(file, label, before, n, st) {
-    if (n > 30) {
-      status(st, label + ': идёт дольше обычного, нажмите «Обновить» позже.', 'warn');
-      return Promise.resolve();
-    }
-    return new Promise(function (done) { setTimeout(done, 6000); }).then(function () {
-      return api(runsUrl(file, '/runs?per_page=1'));
-    }).then(function (r) {
-      var run = (r.data && r.data.workflow_runs || [])[0];
-      if (!run || run.id === before || run.status !== 'completed') {
-        return pollRun(file, label, before, n + 1, st);
+  function pollRun(file, label, id, deadline, st) {
+    return api(actionsPath() + '/runs/' + id, { timeout: 12000 }).then(function (r) {
+      var run = r.data;
+      if (run.status !== 'completed') {
+        var message = run.status === 'in_progress' ? 'выполняется в GitHub.' : 'в очереди GitHub.';
+        var expired = Date.now() >= deadline;
+        status(st, label + ': ' + message + (expired ? ' Проверьте статус позже.' : ''), expired ? 'warn' : '');
+        workflowLink(st, file, id);
+        if (expired) return;
+        return new Promise(function (done) { setTimeout(done, 6000); }).then(function () {
+          return pollRun(file, label, id, deadline, st);
+        });
       }
       if (run.conclusion === 'success') {
         status(st, label + ': готово.', 'ok');
@@ -2479,15 +2578,7 @@
         return;
       }
       status(st, label + ': не удалось обновить.', 'err');
-      if (run.html_url && /^https:\/\/github\.com\//.test(run.html_url)) {
-        var log = el('a', null, ' Открыть журнал GitHub');
-        log.href = run.html_url;
-        log.target = '_blank';
-        log.rel = 'noopener';
-        st.appendChild(log);
-      }
-    }).catch(function (err) {
-      status(st, err.message, 'err');
+      workflowLink(st, file, id);
     });
   }
 
@@ -2503,22 +2594,36 @@
     RUN_BUTTONS.forEach(function (id) { $(id).disabled = true; });
     status(st, label + ': запускаю...', '');
 
-    var step = 'чтение прогонов';
-    return lastRunId(file).then(function (before) {
-      step = 'запуск';
-      return api(runsUrl(file, '/dispatches'), { method: 'POST', body: { ref: 'main' } })
-        .then(function () {
-          status(st, label + ': запущен, жду результата...', '');
-          return pollRun(file, label, before, 0, st);
-        });
-    }).catch(function (err) {
-      if (err.status === 403 || err.status === 404) {
-        status(st, 'Отказ на шаге «' + step + '», код ' + err.status +
-          '. Токену нужно право Actions: Read and write на репозиторий planner-data.', 'err');
-      } else {
-        status(st, 'Сбой на шаге «' + step + '»: ' + err.message, 'err');
+    var id;
+    var existing = kind === 'calendar'
+      ? api(runsUrl(file, '/runs?branch=main&event=workflow_dispatch&per_page=1'), { timeout: 12000 })
+          .then(function (r) { return (r.data.workflow_runs || [])[0]; })
+      : Promise.resolve(null);
+    return existing.then(function (run) {
+      if (run && run.status !== 'completed') return run.id;
+      return api(runsUrl(file, '/dispatches'), { method: 'POST', body: { ref: 'main' }, version: '2026-03-10', timeout: 12000 })
+        .then(function (r) { return r.data && r.data.workflow_run_id; });
+    }).then(function (runId) {
+      id = runId;
+      if (!id) {
+        status(st, label + ': GitHub принял запрос. Статус доступен на странице запусков.', 'warn');
+        workflowLink(st, file);
+        return;
       }
-    }).then(function () {
+      status(st, label + ': проверяю статус запуска…', '');
+      workflowLink(st, file, id);
+      return pollRun(file, label, id, Date.now() + 120000, st);
+    }).catch(function (err) {
+      if (err.kind === 'forbidden' || err.status === 404) {
+        status(st, 'На этом устройстве проверьте ключ GitHub. Для запуска нужны права Actions: Read and write на planner-data.', 'err');
+        var settings = el('button', 'nextbtn', 'Настройки подключения');
+        settings.addEventListener('click', function () { showTab('settings'); });
+        st.append(' ', settings);
+      } else {
+        status(st, label + ': ' + err.message, 'err');
+      }
+      workflowLink(st, file, id);
+    }).finally(function () {
       RUN_BUTTONS.forEach(function (id) { $(id).disabled = false; });
     });
   }
