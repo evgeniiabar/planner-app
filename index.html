@@ -273,6 +273,7 @@
   .plan-tools > button { flex: 0 0 auto; }
   .task-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(135px, 1fr)); gap: 8px; }
   .task-fields input, .task-fields select { width: 100%; }
+  #diaryEventDetails { min-height: 0; }
   .task-dialog {
     width: min(470px, calc(100% - 24px)); max-height: calc(100% - 32px); padding: 18px;
     border: 1px solid var(--line); border-radius: 16px; background: var(--panel); color: var(--text);
@@ -417,6 +418,7 @@
     display: flex; align-items: center; justify-content: center;
   }
   .task.done .box { background: var(--accent); border-color: var(--accent); }
+  .task.picked { outline: 2px solid var(--accent); outline-offset: -2px; }
   .task .body { flex: 1; min-width: 0; }
   .task .t { word-break: break-word; }
   .task.done .t, .task.skipped .t { color: var(--dim); text-decoration: line-through; }
@@ -574,7 +576,10 @@
       <button id="planNext" aria-label="Следующий день">›</button>
       <button id="planToday">Сегодня</button>
     </div>
-    <button class="add-task" id="planAdd">＋ Задача</button>
+    <div class="row">
+      <button class="add-task" id="planAdd">＋ Задача</button>
+      <button id="planPick" hidden>🎲 Что сделать?</button>
+    </div>
     <div class="plan-progress" id="planProgress" hidden>
       <strong>Прыжки дня</strong><span id="planProgressCount"></span>
       <progress id="planProgressBar" aria-label="Выполненные задачи плана" value="0"></progress>
@@ -813,6 +818,25 @@
     <div class="row task-actions">
       <button type="button" id="taskCancel">Отмена</button>
       <button type="submit" id="taskSave">Сохранить</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog class="task-dialog" id="diaryEventDialog" aria-labelledby="diaryEventHeading">
+  <form id="diaryEventForm">
+    <h2 id="diaryEventHeading">Событие в Google Календаре</h2>
+    <label for="diaryEventTitle">Название</label>
+    <input type="text" id="diaryEventTitle" maxlength="160" required>
+    <div class="task-fields">
+      <div><label for="diaryEventDate">Дата</label><input class="task-date" id="diaryEventDate" type="date" required></div>
+      <div><label for="diaryEventTime">Начало (МСК)</label><input class="task-date" id="diaryEventTime" type="time"></div>
+    </div>
+    <label for="diaryEventDetails">Описание (необязательно)</label>
+    <textarea id="diaryEventDetails" rows="2" maxlength="400"></textarea>
+    <div class="hint">Событие со временем займёт час. Если время пустое, оно будет на весь день.</div>
+    <div class="row task-actions">
+      <button type="button" id="diaryEventCancel">Отмена</button>
+      <button type="submit" class="add-task">Открыть в Google Календаре</button>
     </div>
   </form>
 </dialog>
@@ -1550,6 +1574,7 @@
     if (BLOCK_TITLES[t.block]) cls += ' blk-' + t.block;
     var row = el('div', cls);
     row.dataset.taskColor = taskColor(t.color);
+    row.dataset.important = String(t.important === true);
 
     var box = el('button', 'box', t.status === 'done' ? '✓' : '');
     box.setAttribute('aria-label', t.status === 'done' ? 'Вернуть в работу' : 'Отметить выполненной');
@@ -1783,6 +1808,23 @@
       noteCard.appendChild(el('div', null, plan.evening_note));
       body.appendChild(noteCard);
     }
+    $('planPick').hidden = plan.date !== mskToday() || !body.querySelector('.task:not(.done):not(.skipped)');
+  }
+
+  function pickPlanTask() {
+    if ($('planDay').value !== mskToday()) return;
+    var body = $('planBody');
+    var candidates = Array.from(body.querySelectorAll('.task:not(.done):not(.skipped)'));
+    if (!candidates.length) return;
+    var previous = body.querySelector('.task.picked');
+    if (previous) previous.classList.remove('picked');
+    if (candidates.length > 1) candidates = candidates.filter(function (row) { return row !== previous; });
+    var important = candidates.filter(function (row) { return row.dataset.important === 'true'; });
+    if (important.length) candidates = important;
+    var chosen = candidates[Math.floor(Math.random() * candidates.length)];
+    chosen.classList.add('picked');
+    status($('planStatus'), '🎲 Выпало: ' + chosen.querySelector('.t').textContent, 'ok');
+    chosen.scrollIntoView({ block: 'nearest' });
   }
 
   function matchesPlan(task, date, storedPlan) {
@@ -1949,6 +1991,7 @@
     if (!quiet) {
       $('planBody').textContent = '';
       $('planProgress').hidden = true;
+      $('planPick').hidden = true;
       status($('planStatus'), 'Загружаю…', '');
     }
     return readDay(date, true).then(function (data) {
@@ -2143,8 +2186,11 @@
       actions.appendChild(unarchive);
       return card;
     }
-    var resume = el('button', null, 'В задачи');
-    resume.addEventListener('click', function () { resumeStale(item.id); });
+    var plan = el('button', 'add-task', 'В план на сегодня');
+    plan.addEventListener('click', function () { resumeStale(item.id, mskToday()); });
+    actions.appendChild(plan);
+    var resume = el('button', null, 'В задачи без даты');
+    resume.addEventListener('click', function () { resumeStale(item.id, null); });
     actions.appendChild(resume);
     var archive = el('button', null, 'В архив');
     archive.addEventListener('click', function () { archiveStale([item.id], true); });
@@ -2253,30 +2299,43 @@
     }, archive ? 'Перемещено в архив.' : 'Возвращено на полку.');
   }
 
-  function resumeStale(id) {
+  function resumeStale(id, day) {
     return changeShelf(function () {
       return readPlannerJson('stale.json').then(function (data) {
         var item = ((data && data.items) || []).find(function (task) { return task.id === id && !task.archived_at; });
         if (!item) throw new Error('Дело уже перемещено. Обновите полку.');
         return updateJson(REPO_DATA, 'backlog.json', function (backlog) {
           var tasks = backlog.tasks || (backlog.tasks = []);
-          if (tasks.some(function (task) { return task.id === id; })) return null;
-          tasks.push({
-            id: id, title: item.title, due: item.due || null, source: item.source || null,
-            important: item.important === true, color: taskColor(item.color) || null, subtasks: taskSubtasks(item),
-            est_min: item.est_min || null, decision_note: item.decision_note || null,
-            first_seen: item.first_seen || mskToday(), carry_count: 0, last_carry_date: null,
-            last_planned_date: null, status: 'open', done_at: null
-          });
+          var task = tasks.find(function (task) { return task.id === id; });
+          if (task) {
+            if (!day) return null;
+            if (task.status !== 'open') throw new Error('Эта задача уже закрыта в списке «Всё».');
+            if (task.scheduled_date === day && task.status_updated_at && task.skipped_date !== day) return null;
+          } else {
+            task = {
+              id: id, title: item.title, due: item.due || null, source: item.source || null,
+              important: item.important === true, color: taskColor(item.color) || null, subtasks: taskSubtasks(item),
+              est_min: item.est_min || null, decision_note: item.decision_note || null,
+              first_seen: item.first_seen || mskToday(), carry_count: 0, last_carry_date: null,
+              last_planned_date: null, status: 'open', done_at: null
+            };
+            tasks.push(task);
+          }
+          if (day) {
+            if (task.scheduled_date !== day) task.scheduled_block = 'afternoon';
+            task.scheduled_date = day;
+            task.skipped_date = null;
+            task.status_updated_at = new Date().toISOString();
+          }
           return backlog;
-        }, 'с полки в задачи: ' + id);
+        }, (day ? 'с полки в план: ' : 'с полки в задачи: ') + id);
       }).then(function () {
         return updateJson(REPO_DATA, 'stale.json', function (data) {
           data.items = (data.items || []).filter(function (item) { return item.id !== id; });
           return data;
         }, 'полка: возвращена задача ' + id);
       });
-    }, 'Дело теперь в списке «Всё».');
+    }, day ? 'Дело теперь в плане на сегодня.' : 'Дело теперь в списке «Всё».');
   }
 
   function decide(id, decision, note) {
@@ -3619,6 +3678,47 @@
     return box;
   }
 
+  function openDiaryEvent(entry) {
+    var title = $('diaryEventTitle');
+    var firstLine = (entry.text || '').trim().split('\n')[0].trim();
+    title.value = Array.from(firstLine).slice(0, 160).join('') || 'Запись из дневника';
+    title.setCustomValidity('');
+    $('diaryEventDate').value = entry.date;
+    if (!$('diaryEventDate').value) $('diaryEventDate').value = mskToday();
+    $('diaryEventTime').value = '';
+    $('diaryEventDetails').value = '';
+    $('diaryEventDialog').showModal();
+  }
+
+  function submitDiaryEvent(event) {
+    event.preventDefault();
+    var title = $('diaryEventTitle');
+    if (!title.value.trim()) {
+      title.setCustomValidity('Введите название события.');
+      title.reportValidity();
+      return;
+    }
+    var day = $('diaryEventDate').value;
+    var time = $('diaryEventTime').value;
+    var calendar = new URL('https://calendar.google.com/calendar/render');
+    var dates = (day + '/' + shiftPlanDay(day, 1)).replace(/-/g, '');
+    if (time) {
+      var start = Date.parse(day + 'T' + time + ':00+03:00');
+      dates = [start, start + 3600000].map(function (timestamp) {
+        return new Date(timestamp).toISOString().replace(/[-:]/g, '').replace('.000Z', 'Z');
+      }).join('/');
+    }
+    calendar.searchParams.set('action', 'TEMPLATE');
+    calendar.searchParams.set('text', title.value.trim());
+    calendar.searchParams.set('dates', dates);
+    if (time) calendar.searchParams.set('ctz', 'Europe/Moscow');
+    var details = $('diaryEventDetails').value.trim();
+    if (details) calendar.searchParams.set('details', details);
+    window.open(calendar.href, '_blank', 'noopener,noreferrer');
+    $('diaryEventDialog').close();
+    status($('diaryStatus'), 'Проверьте событие и нажмите «Сохранить» в Google Календаре.', 'ok');
+  }
+
   function renderDiary(entries, month) {
     var body = $("dBody");
     body.textContent = "";
@@ -3634,6 +3734,11 @@
       div.appendChild(t);
       if (e.text) div.appendChild(document.createTextNode(e.text));
       if (e.shots && e.shots.length) div.appendChild(shotsBlock(e.shots));
+      var actions = el('div', 'row task-actions');
+      var calendar = el('button', null, '📅 В Google Календарь');
+      calendar.addEventListener('click', function () { openDiaryEvent(e); });
+      actions.appendChild(calendar);
+      div.appendChild(actions);
       body.appendChild(div);
     });
   }
@@ -3930,6 +4035,7 @@
   $('planAdd').addEventListener('click', function () {
     openTaskEditor({ day: $('planDay').value || mskToday(), statusId: 'planStatus' });
   });
+  $('planPick').addEventListener('click', pickPlanTask);
   $('allAdd').addEventListener('click', function () { openTaskEditor({ statusId: 'allStatus' }); });
   $('allImportant').addEventListener('click', function () {
     this.setAttribute('aria-pressed', String(this.getAttribute('aria-pressed') !== 'true'));
@@ -3966,6 +4072,9 @@
   $('dReload').addEventListener('click', function () { loadDiary(null, false); });
   $('dExport').addEventListener('click', dExport);
   $('dMonth').addEventListener('change', function () { loadDiary(this.value, false); });
+  $('diaryEventTitle').addEventListener('input', function () { this.setCustomValidity(''); });
+  $('diaryEventCancel').addEventListener('click', function () { $('diaryEventDialog').close(); });
+  $('diaryEventForm').addEventListener('submit', submitDiaryEvent);
   $('nSend').addEventListener('click', function () {
     var ta = $('nEntry');
     var v = ta.value.trim();
